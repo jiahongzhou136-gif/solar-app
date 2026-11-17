@@ -190,7 +190,7 @@ struct ContentView: View {
                     .padding(.horizontal, Design.padH)
                     .padding(.bottom, 20)
                 }
-                .refreshable { await refresh() }
+                .refreshable { await refresh(haptic: true) }
 
                 if !configured {
                     configHint
@@ -213,7 +213,7 @@ struct ContentView: View {
         .animation(Design.snappy, value: data)
         .task {
             withAnimation(Design.springy) { appeared = true }
-            await refresh()
+            await refreshLoop()
         }
     }
 
@@ -293,6 +293,7 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, minHeight: 118, alignment: .leading)
         }
         .buttonStyle(CardPressStyle())
+        .contentShape(RoundedRectangle(cornerRadius: Design.cardRadius, style: .continuous))
         .matchedTransitionSource(id: kind.id, in: zoomNS)
         .modifier(GlassCard(radius: Design.cardRadius))
     }
@@ -377,6 +378,7 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, minHeight: 134, alignment: .leading)
         }
         .buttonStyle(CardPressStyle())
+        .contentShape(RoundedRectangle(cornerRadius: Design.rowRadius, style: .continuous))
         .matchedTransitionSource(id: DeviceKind.battery.id, in: zoomNS)
         .modifier(GlassCard(radius: Design.rowRadius))
     }
@@ -398,34 +400,39 @@ struct ContentView: View {
     // MARK: 今日能量
 
     private var energyCard: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 10) {
             Text("今日能量")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Palette.text)
 
-            HStack(spacing: 4) {
+            LazyVGrid(
+                columns: [GridItem(.flexible(), spacing: 12),
+                          GridItem(.flexible(), spacing: 12)],
+                alignment: .leading,
+                spacing: 10
+            ) {
                 energyItem("日充电", Fmt.kwh(data.dailyCharge, digits: 2))
                 energyItem("日放电", Fmt.kwh(data.dailyDischarge, digits: 2))
                 energyItem("日发电", Fmt.kwh(data.dailyPv, digits: 2))
                 energyItem("累计发电", Fmt.kwh(data.totalPv, digits: 1))
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .frame(maxWidth: .infinity, minHeight: 96, alignment: .leading)
+        .padding(.horizontal, 15)
+        .padding(.vertical, 13)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .modifier(GlassCard(radius: Design.rowRadius))
     }
 
     private func energyItem(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 3) {
             Text(label)
-                .font(.system(size: 9, weight: .regular))
-                .foregroundStyle(Palette.dim)
+                .font(.system(size: 11))
+                .foregroundStyle(Color(hex: 0xA9C2D6))
             Text(value)
-                .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
                 .foregroundStyle(Palette.text)
                 .lineLimit(1)
-                .minimumScaleFactor(0.55)
+                .minimumScaleFactor(0.7)
                 .contentTransition(.numericText())
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -458,8 +465,19 @@ struct ContentView: View {
 
     // MARK: 取数
 
+    /// 每 5 秒轮询一次；视图消失时 Task 会被自动取消
     @MainActor
-    private func refresh() async {
+    private func refreshLoop() async {
+        await refresh()
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 5 * 1_000_000_000)
+            if Task.isCancelled { break }
+            await refresh()
+        }
+    }
+
+    @MainActor
+    private func refresh(haptic: Bool = false) async {
         guard configured else {
             errorText = nil
             return
@@ -472,7 +490,9 @@ struct ContentView: View {
                 data = fresh
                 errorText = nil
             }
-            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+            if haptic {
+                UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+            }
         } catch {
             errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
@@ -536,7 +556,7 @@ struct BatteryGlyph: View {
             let h = geo.size.height
             let level = min(max((soc ?? 0) / 100, 0), 1)
 
-            ZStack(alignment: .bottom) {
+            ZStack {
                 RoundedRectangle(cornerRadius: w * 0.32, style: .continuous)
                     .fill(Color(hex: 0x041E30).opacity(0.86))
 
@@ -551,11 +571,13 @@ struct BatteryGlyph: View {
                     .frame(height: max(6, (h - 10) * level))
                     .padding(.horizontal, 5)
                     .padding(.bottom, 5)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
 
                 Text(Fmt.percent(soc))
                     .font(.system(size: w * 0.27, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                     .shadow(color: Color(hex: 0x00192F).opacity(0.55), radius: 3, y: 1)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .overlay(
                 RoundedRectangle(cornerRadius: w * 0.32, style: .continuous)
@@ -967,27 +989,36 @@ struct ForecastBar: View {
     var body: some View {
         HStack(alignment: .center, spacing: 9) {
             Image(systemName: data.weather.symbol)
-                .font(.system(size: 18, weight: .regular))
-                .foregroundStyle(Palette.text.opacity(0.9))
+                .font(.system(size: 19, weight: .regular))
+                .foregroundStyle(Palette.text)
                 .frame(width: 24)
 
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 3) {
-                    Text("今日预计").foregroundStyle(Palette.dim)
-                    Text(Fmt.kwh(data.forecastToday)).foregroundStyle(Palette.text).fontWeight(.semibold)
-                    Text("，剩余").foregroundStyle(Palette.dim)
-                    Text(Fmt.kwh(data.forecastRemaining)).foregroundStyle(Palette.text).fontWeight(.semibold)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text("今日预计").foregroundStyle(Color(hex: 0xC2D6E4))
+                    Text(Fmt.kwh(data.forecastToday))
+                        .foregroundStyle(.white)
+                        .fontWeight(.semibold)
+                    Text("剩余").foregroundStyle(Color(hex: 0xC2D6E4))
+                    Text(Fmt.kwh(data.forecastRemaining))
+                        .foregroundStyle(.white)
+                        .fontWeight(.semibold)
                 }
-                .font(.system(size: 12))
+                .font(.system(size: 13))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
 
                 Text(secondLine)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Palette.dim)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color(hex: 0xC2D6E4))
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
+            .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 4)
+        .padding(.vertical, 2)
     }
 
     private var secondLine: String {

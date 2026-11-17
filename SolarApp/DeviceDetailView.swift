@@ -32,13 +32,13 @@ struct DeviceDetailView: View {
 
                         if let note = detail.note {
                             Text(note)
-                                .font(.system(size: 9.5))
-                                .foregroundStyle(Color(hex: 0x7F97AA))
-                                .lineSpacing(2)
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color(hex: 0x8FA9BD))
+                                .lineSpacing(3)
                         }
 
                         Text("数据来自 HA 实体 · 下拉刷新")
-                            .font(.system(size: 9.5))
+                            .font(.system(size: 11))
                             .foregroundStyle(Color(hex: 0x7F97AA))
                             .frame(maxWidth: .infinity)
                             .padding(.top, 4)
@@ -51,7 +51,7 @@ struct DeviceDetailView: View {
         }
         .preferredColorScheme(.dark)
         .navigationBarBackButtonHidden(true)
-        .task { await load() }
+        .task { await loadLoop() }
         .animation(Design.snappy, value: detail)
     }
 
@@ -86,15 +86,15 @@ struct DeviceDetailView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(kind.kicker)
-                        .font(.system(size: 9.5, weight: .semibold))
-                        .tracking(1.2)
+                        .font(.system(size: 10, weight: .semibold))
+                        .tracking(1.3)
                         .foregroundStyle(Color(hex: 0x7FD8FF))
                     Text(kind.title)
-                        .font(.system(size: 22, weight: .semibold))
+                        .font(.system(size: 27, weight: .semibold))
                         .foregroundStyle(Palette.text)
                     Text(kind.desc)
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(Palette.sub)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color(hex: 0xA9C2D6))
                 }
                 Spacer(minLength: 8)
                 Button {
@@ -118,37 +118,38 @@ struct DeviceDetailView: View {
     private func fieldGrid(_ fields: [(String, String)]) -> some View {
         VStack(alignment: .leading, spacing: 9) {
             Text("实时运行")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Palette.text)
 
             LazyVGrid(
-                columns: [GridItem(.flexible(), spacing: 14),
-                          GridItem(.flexible(), spacing: 14)],
+                columns: [GridItem(.flexible(), spacing: 18),
+                          GridItem(.flexible(), spacing: 18)],
                 spacing: 0
             ) {
                 ForEach(Array(fields.enumerated()), id: \.offset) { _, item in
-                    HStack {
+                    HStack(spacing: 6) {
                         Text(item.0)
-                            .font(.system(size: 10.5))
+                            .font(.system(size: 13))
                             .foregroundStyle(Color(hex: 0xA9C2D6))
-                        Spacer(minLength: 6)
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
                         Text(item.1)
-                            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
                             .foregroundStyle(Palette.text)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
                     }
-                    .padding(.vertical, 7)
+                    .padding(.vertical, 12)
                     .overlay(alignment: .bottom) {
                         Rectangle()
-                            .fill(Color.white.opacity(0.09))
+                            .fill(Color.white.opacity(0.10))
                             .frame(height: 0.5)
                     }
                 }
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
         .modifier(GlassCard(radius: Design.rowRadius))
     }
 
@@ -158,12 +159,12 @@ struct DeviceDetailView: View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
                 Text("单体电压")
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Palette.text)
                 Spacer()
                 if let maxV = cells.max(), let minV = cells.min() {
                     Text(String(format: "压差 %.3f V", maxV - minV))
-                        .font(.system(size: 9.5))
+                        .font(.system(size: 11))
                         .foregroundStyle(Color(hex: 0xA9C2D6))
                 }
             }
@@ -173,16 +174,16 @@ struct DeviceDetailView: View {
                 spacing: 5
             ) {
                 ForEach(Array(cells.enumerated()), id: \.offset) { idx, v in
-                    VStack(spacing: 1) {
+                    VStack(spacing: 2) {
                         Text(String(format: "%02d", idx + 1))
-                            .font(.system(size: 8))
+                            .font(.system(size: 10))
                             .foregroundStyle(Color(hex: 0x8FA9BD))
                         Text(String(format: "%.3f", v))
-                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
                             .foregroundStyle(Palette.text)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 5)
+                    .padding(.vertical, 7)
                     .background(
                         Color.white.opacity(0.07),
                         in: RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -190,8 +191,8 @@ struct DeviceDetailView: View {
                 }
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
         .modifier(GlassCard(radius: Design.rowRadius))
     }
 
@@ -227,6 +228,16 @@ struct DeviceDetailView: View {
     }
 
     // MARK: 取数
+
+    @MainActor
+    private func loadLoop() async {
+        await load()
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 5 * 1_000_000_000)
+            if Task.isCancelled { break }
+            await load()
+        }
+    }
 
     @MainActor
     private func load() async {
