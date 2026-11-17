@@ -155,9 +155,11 @@ struct DeviceDetailView: View {
                         if active {
                             RoundedRectangle(cornerRadius: 15, style: .continuous)
                                 .fill(Color(hex: 0xEBF6FF).opacity(0.94))
+                        } else {
+                            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                                .fill(Color.white.opacity(0.07))
                         }
                     }
-                    .modifier(active ? AnyViewModifier.empty : AnyViewModifier.glass(15))
                 }
                 .buttonStyle(CardPressStyle())
             }
