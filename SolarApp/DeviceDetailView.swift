@@ -10,6 +10,7 @@ struct DeviceDetailView: View {
     @State private var detail: DeviceDetail?
     @State private var errorText: String?
     @State private var isLoading = true
+    @State private var page = 0
 
     var body: some View {
         ZStack {
@@ -24,10 +25,17 @@ struct DeviceDetailView: View {
                     } else if let errorText {
                         errorBlock(errorText)
                     } else if let detail {
-                        fieldGrid(detail.fields)
+                        if detail.sections.count > 1 {
+                            tabBar(detail.sections)
+                                .padding(.bottom, 2)
+                        }
+
+                        if let section = currentSection(detail) {
+                            fieldCard(section)
+                        }
 
                         if !detail.cells.isEmpty {
-                            cellSection(detail.cells)
+                            cellCard(detail.cells)
                         }
 
                         if let note = detail.note {
@@ -37,15 +45,15 @@ struct DeviceDetailView: View {
                                 .lineSpacing(3)
                         }
 
-                        Text("数据来自 HA 实体 · 下拉刷新")
+                        Text("数据来自 HA 实体 · 每 2 秒同步 · 下拉刷新")
                             .font(.system(size: 11))
-                            .foregroundStyle(Color(hex: 0x7F97AA))
+                            .foregroundStyle(Color(hex: 0x8FA9BD))
                             .frame(maxWidth: .infinity)
-                            .padding(.top, 4)
+                            .padding(.top, 2)
                     }
                 }
                 .padding(.horizontal, Design.padH)
-                .padding(.bottom, 30)
+                .padding(.bottom, 34)
             }
             .refreshable { await load() }
         }
@@ -55,24 +63,35 @@ struct DeviceDetailView: View {
         .animation(Design.snappy, value: detail)
     }
 
-    // MARK: 背景
+    private func currentSection(_ d: DeviceDetail) -> DetailSection? {
+        guard !d.sections.isEmpty else { return nil }
+        let index = min(max(page, 0), d.sections.count - 1)
+        return d.sections[index]
+    }
+
+    // MARK: 背景（给玻璃提供可折射的内容）
 
     private var backdrop: some View {
         ZStack {
-            Palette.bg
+            Color(hex: 0x050D15)
+
             LinearGradient(
-                colors: [
-                    Color(hex: 0x0D2236),
-                    Color(hex: 0x081824),
-                    Color(hex: 0x050D15),
-                ],
+                colors: [Color(hex: 0x0E2A42), Color(hex: 0x081824), Color(hex: 0x040B12)],
                 startPoint: .topLeading,
                 endPoint: .bottom
             )
+
             RadialGradient(
-                colors: [Color(hex: 0x1D5C7A).opacity(0.35), .clear],
-                center: .topTrailing,
-                startRadius: 10,
+                colors: [Color(hex: 0x2BA9C8).opacity(0.34), .clear],
+                center: UnitPoint(x: 0.86, y: 0.06),
+                startRadius: 8,
+                endRadius: 460
+            )
+
+            RadialGradient(
+                colors: [Color(hex: 0x1E5E8C).opacity(0.28), .clear],
+                center: UnitPoint(x: 0.10, y: 0.62),
+                startRadius: 8,
                 endRadius: 420
             )
         }
@@ -82,65 +101,96 @@ struct DeviceDetailView: View {
     // MARK: 头部
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(kind.kicker)
-                        .font(.system(size: 10, weight: .semibold))
-                        .tracking(1.3)
-                        .foregroundStyle(Color(hex: 0x7FD8FF))
-                    Text(kind.title)
-                        .font(.system(size: 27, weight: .semibold))
-                        .foregroundStyle(Palette.text)
-                    Text(kind.desc)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color(hex: 0xA9C2D6))
-                }
-                Spacer(minLength: 8)
-                Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Palette.text)
-                        .frame(width: 30, height: 30)
-                }
-                .buttonStyle(.plain)
-                .modifier(GlassCircle())
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(kind.kicker)
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(1.3)
+                    .foregroundStyle(Color(hex: 0x7FD8FF))
+                Text(kind.title)
+                    .font(.system(size: 27, weight: .semibold))
+                    .foregroundStyle(Palette.text)
+                Text(kind.desc)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color(hex: 0xA9C2D6))
             }
+            Spacer(minLength: 8)
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                dismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Palette.text)
+                    .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.plain)
+            .modifier(GlassCircle())
         }
-        .padding(.top, 6)
+        .padding(.top, 8)
     }
 
-    // MARK: 字段
+    // MARK: 视图切换（电池两页）
 
-    private func fieldGrid(_ fields: [(String, String)]) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text("实时运行")
+    private func tabBar(_ sections: [DetailSection]) -> some View {
+        HStack(spacing: 9) {
+            ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
+                let active = index == min(max(page, 0), sections.count - 1)
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    withAnimation(Design.snappy) { page = index }
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(section.title)
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .foregroundStyle(active ? Color(hex: 0x0A2639) : Color(hex: 0xDCECF8))
+                        Text(subtitle(for: section.title))
+                            .font(.system(size: 9.5))
+                            .foregroundStyle(active ? Color(hex: 0x38566B) : Color(hex: 0xA9C2D6))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 10)
+                    .background {
+                        if active {
+                            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                                .fill(Color(hex: 0xEBF6FF).opacity(0.94))
+                        }
+                    }
+                    .modifier(active ? AnyViewModifier.empty : AnyViewModifier.glass(15))
+                }
+                .buttonStyle(CardPressStyle())
+            }
+        }
+    }
+
+    private func subtitle(for title: String) -> String {
+        title == "BMS 数据" ? "SOC · 单体 · 安全" : "输出 · 温度 · Bus1"
+    }
+
+    // MARK: 字段（单列）
+
+    private func fieldCard(_ section: DetailSection) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(section.title)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Palette.text)
+                .padding(.bottom, 4)
 
-            LazyVGrid(
-                columns: [GridItem(.flexible(), spacing: 18),
-                          GridItem(.flexible(), spacing: 18)],
-                spacing: 0
-            ) {
-                ForEach(Array(fields.enumerated()), id: \.offset) { _, item in
-                    HStack(spacing: 6) {
-                        Text(item.0)
-                            .font(.system(size: 13))
-                            .foregroundStyle(Color(hex: 0xA9C2D6))
-                            .lineLimit(1)
-                        Spacer(minLength: 4)
-                        Text(item.1)
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Palette.text)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                    }
-                    .padding(.vertical, 12)
-                    .overlay(alignment: .bottom) {
+            ForEach(Array(section.fields.enumerated()), id: \.offset) { index, item in
+                HStack(spacing: 12) {
+                    Text(item.0)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color(hex: 0xA9C2D6))
+                    Spacer(minLength: 8)
+                    Text(item.1)
+                        .font(.system(size: 13.5, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Palette.text)
+                        .multilineTextAlignment(.trailing)
+                }
+                .padding(.vertical, 13)
+                .overlay(alignment: .bottom) {
+                    if index < section.fields.count - 1 {
                         Rectangle()
                             .fill(Color.white.opacity(0.10))
                             .frame(height: 0.5)
@@ -150,13 +200,14 @@ struct DeviceDetailView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .modifier(GlassCard(radius: Design.rowRadius))
     }
 
     // MARK: 单体电压
 
-    private func cellSection(_ cells: [Double]) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
+    private func cellCard(_ cells: [Double]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("单体电压")
                     .font(.system(size: 14, weight: .semibold))
@@ -170,24 +221,21 @@ struct DeviceDetailView: View {
             }
 
             LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible(), spacing: 5), count: 4),
-                spacing: 5
+                columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4),
+                spacing: 6
             ) {
                 ForEach(Array(cells.enumerated()), id: \.offset) { idx, v in
                     VStack(spacing: 2) {
                         Text(String(format: "%02d", idx + 1))
-                            .font(.system(size: 10))
+                            .font(.system(size: 9.5))
                             .foregroundStyle(Color(hex: 0x8FA9BD))
                         Text(String(format: "%.3f", v))
                             .font(.system(size: 12, weight: .medium, design: .rounded))
                             .foregroundStyle(Palette.text)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 7)
-                    .background(
-                        Color.white.opacity(0.07),
-                        in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    )
+                    .padding(.vertical, 8)
+                    .modifier(CellChip())
                 }
             }
         }
@@ -216,10 +264,10 @@ struct DeviceDetailView: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color(hex: 0xFF9B9B))
             Text(message)
-                .font(.system(size: 10.5))
+                .font(.system(size: 11))
                 .foregroundStyle(Color(hex: 0xD8B4B4))
             Text("检查 HA 地址、令牌，或下拉重试")
-                .font(.system(size: 9.5))
+                .font(.system(size: 10))
                 .foregroundStyle(Color(hex: 0x8FA9BD))
         }
         .padding(16)
@@ -229,11 +277,12 @@ struct DeviceDetailView: View {
 
     // MARK: 取数
 
+    /// 与源数据同频：Modbus 6 段 × 1.2s throttle ≈ 7.2s 一轮，2 秒轮询足以捕捉变化
     @MainActor
     private func loadLoop() async {
         await load()
         while !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 1 * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: 2 * 1_000_000_000)
             if Task.isCancelled { break }
             await load()
         }
@@ -244,10 +293,45 @@ struct DeviceDetailView: View {
         isLoading = true
         defer { isLoading = false }
         do {
-            detail = try await client.fetchDetail(kind)
+            let fresh = try await client.fetchDetail(kind)
+            detail = fresh
             errorText = nil
         } catch {
             errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+}
+
+// MARK: - 条件修饰器
+
+enum AnyViewModifier {
+    struct Empty: ViewModifier {
+        func body(content: Content) -> some View { content }
+    }
+
+    struct Glass: ViewModifier {
+        let radius: CGFloat
+        func body(content: Content) -> some View {
+            content.modifier(GlassCard(radius: radius))
+        }
+    }
+
+    static var empty: Empty { Empty() }
+    static func glass(_ radius: CGFloat) -> Glass { Glass(radius: radius) }
+}
+
+// MARK: - 单体电压格
+
+struct CellChip: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        } else {
+            content
+                .background(
+                    Color.white.opacity(0.07),
+                    in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                )
         }
     }
 }

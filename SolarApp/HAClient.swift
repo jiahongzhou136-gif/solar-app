@@ -3,7 +3,6 @@ import Foundation
 // MARK: - 实体配置
 
 enum SolarConfig {
-    /// 示例地址；首次启动在 App 设置页填自己的 HA 地址
     static let defaultBaseURL = "http://192.168.1.100:8123"
     static let defaultPanelURL = "http://192.168.1.100:8123/solar-board/solar"
 
@@ -31,6 +30,7 @@ enum SolarConfig {
         prefix + "inverter_temperature",               // 17
         prefix + "inverter_status_raw",                // 18
         prefix + "inverter_warning_code_raw",          // 19
+        "sun.sun",                                     // 20（夜间判定，与面板同源）
     ]
 
     static func template(_ ids: [String]) -> String {
@@ -161,52 +161,80 @@ enum DeviceKind: String, CaseIterable, Identifiable, Hashable {
         let entity: String
         let unit: String
         let digits: Int
+        /// 值为 on/off 这类文本时的映射
+        var textMap: [String: String] = [:]
     }
 
-    var fields: [Field] {
+    struct FieldGroup {
+        let title: String
+        let fields: [Field]
+    }
+
+    /// 与 HA 面板 `_detailDialog` / `_batteryDialog` 的字段顺序保持一致
+    var groups: [FieldGroup] {
         let p = SolarConfig.prefix
         switch self {
         case .pv1:
-            return [
-                .init(label: "实时功率", entity: p + "pv1_power", unit: "W", digits: 0),
-                .init(label: "电压", entity: p + "pv1_voltage", unit: "V", digits: 1),
-                .init(label: "电流", entity: p + "pv1_current", unit: "A", digits: 2),
+            return [FieldGroup(title: "实时运行", fields: [
+                .init(label: "PV1 功率", entity: p + "pv1_power", unit: "W", digits: 0),
+                .init(label: "PV1 电压", entity: p + "pv1_voltage", unit: "V", digits: 1),
+                .init(label: "PV1 电流", entity: p + "pv1_current", unit: "A", digits: 2),
+                .init(label: "PV2", entity: p + "pv2_power", unit: "W", digits: 0),
                 .init(label: "今日发电", entity: p + "daily_pv_energy", unit: "kWh", digits: 2),
-                .init(label: "累计发电", entity: p + "total_pv_energy", unit: "kWh", digits: 1),
-            ]
+                .init(label: "总发电", entity: p + "total_pv_energy", unit: "kWh", digits: 2),
+            ])]
+
         case .inverter:
-            return [
-                .init(label: "输出功率", entity: p + "pv_total_power", unit: "W", digits: 0),
-                .init(label: "温度", entity: p + "inverter_temperature", unit: "°C", digits: 1),
-                .init(label: "Bus1 电压", entity: p + "bus1_voltage", unit: "V", digits: 1),
-                .init(label: "运行状态", entity: p + "inverter_status_raw", unit: "", digits: 0),
-                .init(label: "告警码", entity: p + "inverter_warning_code_raw", unit: "", digits: 0),
-                .init(label: "累计运行", entity: p + "inverter_runtime_raw", unit: "h", digits: 0),
-            ]
+            return [FieldGroup(title: "实时运行", fields: [
+                .init(label: "输出 / 负载", entity: p + "pv_total_power", unit: "W", digits: 0),
+                .init(label: "逆变器温度", entity: p + "inverter_temperature", unit: "°C", digits: 1),
+                .init(label: "Bus1 内部电压", entity: p + "bus1_voltage", unit: "V", digits: 1),
+                .init(label: "故障", entity: p + "inverter_fault_code_raw", unit: "", digits: 0),
+                .init(label: "主告警", entity: p + "inverter_warning_code_raw", unit: "", digits: 0),
+            ])]
+
+        case .grid:
+            return [FieldGroup(title: "实时运行", fields: [
+                .init(label: "当前购电", entity: p + "grid_import_power", unit: "W", digits: 0),
+                .init(label: "当前馈网", entity: p + "grid_export_power", unit: "W", digits: 0),
+                .init(label: "实时功率（原始）", entity: p + "grid_power_raw", unit: "W", digits: 0),
+                .init(label: "今日购电", entity: p + "daily_grid_import_energy", unit: "kWh", digits: 2),
+                .init(label: "今日馈网", entity: p + "daily_grid_export_energy", unit: "kWh", digits: 2),
+            ])]
+
+        case .load:
+            return [FieldGroup(title: "实时运行", fields: [
+                .init(label: "当前负载", entity: p + "load_power", unit: "W", digits: 0),
+                .init(label: "今日用电", entity: p + "daily_load_energy", unit: "kWh", digits: 2),
+            ])]
+
         case .battery:
             return [
-                .init(label: "SOC", entity: p + "bms_soc", unit: "%", digits: 0),
-                .init(label: "电压", entity: p + "battery_voltage", unit: "V", digits: 2),
-                .init(label: "电流", entity: p + "battery_current", unit: "A", digits: 2),
-                .init(label: "温度", entity: p + "battery_temperature", unit: "°C", digits: 1),
-                .init(label: "充电功率", entity: p + "battery_charge_power", unit: "W", digits: 0),
-                .init(label: "放电功率", entity: p + "battery_discharge_power", unit: "W", digits: 0),
-                .init(label: "剩余容量", entity: p + "bms_remaining_capacity", unit: "Ah", digits: 1),
-                .init(label: "额定容量", entity: p + "bms_nominal_capacity", unit: "Ah", digits: 0),
-                .init(label: "循环次数", entity: p + "bms_cycle_count", unit: "次", digits: 0),
-                .init(label: "最高单体", entity: p + "bms_max_cell_voltage", unit: "V", digits: 3),
-                .init(label: "最低单体", entity: p + "bms_min_cell_voltage", unit: "V", digits: 3),
-                .init(label: "单体压差", entity: p + "bms_cell_delta", unit: "V", digits: 3),
-            ]
-        case .grid:
-            return [
-                .init(label: "实时功率", entity: p + "grid_power_raw", unit: "W", digits: 0),
-            ]
-        case .load:
-            return [
-                .init(label: "实时功率", entity: p + "load_power", unit: "W", digits: 0),
-                .init(label: "今日用电", entity: p + "daily_load_energy", unit: "kWh", digits: 2),
-                .init(label: "累计用电", entity: p + "total_load_energy", unit: "kWh", digits: 1),
+                FieldGroup(title: "逆变器数据", fields: [
+                    .init(label: "SOC", entity: p + "bms_soc", unit: "%", digits: 0),
+                    .init(label: "充电功率", entity: p + "battery_charge_power", unit: "W", digits: 0),
+                    .init(label: "放电功率", entity: p + "battery_discharge_power", unit: "W", digits: 0),
+                    .init(label: "电压", entity: p + "battery_voltage", unit: "V", digits: 2),
+                    .init(label: "电流", entity: p + "battery_current", unit: "A", digits: 2),
+                    .init(label: "温度", entity: p + "battery_temperature", unit: "°C", digits: 1),
+                    .init(label: "BMS 剩余容量", entity: p + "bms_remaining_capacity", unit: "Ah", digits: 2),
+                ]),
+                FieldGroup(title: "BMS 数据", fields: [
+                    .init(label: "SOC", entity: p + "bms_soc", unit: "%", digits: 0),
+                    .init(label: "总压", entity: p + "bms_pack_voltage", unit: "V", digits: 2),
+                    .init(label: "电流", entity: p + "bms_current", unit: "A", digits: 2),
+                    .init(label: "温度", entity: p + "bms_temperature_1", unit: "°C", digits: 1),
+                    .init(label: "剩余容量", entity: p + "bms_remaining_capacity", unit: "Ah", digits: 1),
+                    .init(label: "标称容量", entity: p + "bms_nominal_capacity", unit: "Ah", digits: 1),
+                    .init(label: "循环次数", entity: p + "bms_cycle_count", unit: "次", digits: 0),
+                    .init(label: "最高单体", entity: p + "bms_max_cell_voltage", unit: "V", digits: 3),
+                    .init(label: "最低单体", entity: p + "bms_min_cell_voltage", unit: "V", digits: 3),
+                    .init(label: "压差", entity: p + "bms_cell_delta", unit: "V", digits: 3),
+                    .init(label: "均衡", entity: "binary_sensor.guang_fu_ben_di_wang_guan_bms_balancing",
+                          unit: "", digits: 0,
+                          textMap: ["on": "均衡中", "off": "未均衡"]),
+                    .init(label: "告警", entity: p + "bms_errors", unit: "", digits: 0),
+                ]),
             ]
         }
     }
@@ -242,12 +270,21 @@ struct SolarData: Equatable {
     var inverterTemp: Double?
     var inverterStatus: String
     var warningCode: String
+    var sunState: String
     var rawPreview: String
     var updatedAt: Date
 
     var weather: WeatherKind { WeatherKind.from(weatherRaw) }
 
-    /// 电池净功率：正=充电，负=放电
+    /// 与 HA 面板一致：优先 sun.sun，取不到时用本地时间兜底
+    var isNight: Bool {
+        let s = sunState.lowercased()
+        if s == "below_horizon" { return true }
+        if s == "above_horizon" { return false }
+        let hour = Calendar.current.component(.hour, from: Date())
+        return hour < 6 || hour >= 18
+    }
+
     var batteryPower: Double? {
         guard charge != nil || discharge != nil else { return nil }
         return (charge ?? 0) - (discharge ?? 0)
@@ -302,6 +339,7 @@ struct SolarData: Equatable {
             inverterTemp: num(17),
             inverterStatus: str(18),
             warningCode: str(19),
+            sunState: str(20),
             rawPreview: preview,
             updatedAt: Date()
         )
@@ -313,20 +351,31 @@ struct SolarData: Equatable {
         dailyCharge: nil, dailyDischarge: nil, dailyPv: nil, totalPv: nil,
         forecastToday: nil, forecastRemaining: nil, forecastTomorrow: nil,
         weatherRaw: "", inverterTemp: nil, inverterStatus: "", warningCode: "",
+        sunState: "",
         rawPreview: "", updatedAt: Date(timeIntervalSince1970: 0)
     )
 }
 
 // MARK: - 详情数据
 
+struct DetailSection: Identifiable, Equatable {
+    let id = UUID()
+    let title: String
+    var fields: [(String, String)]
+
+    static func == (lhs: DetailSection, rhs: DetailSection) -> Bool {
+        lhs.title == rhs.title
+            && lhs.fields.map { $0.0 + $0.1 } == rhs.fields.map { $0.0 + $0.1 }
+    }
+}
+
 struct DeviceDetail: Equatable {
-    var fields: [(String, String)] = []
+    var sections: [DetailSection] = []
     var cells: [Double] = []
     var note: String?
 
     static func == (lhs: DeviceDetail, rhs: DeviceDetail) -> Bool {
-        lhs.fields.map { $0.0 + $0.1 } == rhs.fields.map { $0.0 + $0.1 }
-            && lhs.cells == rhs.cells
+        lhs.sections == rhs.sections && lhs.cells == rhs.cells
     }
 }
 
@@ -391,8 +440,11 @@ struct HAClient {
     }
 
     func fetchDetail(_ kind: DeviceKind) async throws -> DeviceDetail {
-        let ids = kind.fields.map(\.entity) + kind.cellEntities
+        let groups = kind.groups
+        let allFields = groups.flatMap { $0.fields }
+        let ids = allFields.map(\.entity) + kind.cellEntities
         let text = try await postTemplate(ids)
+
         let parts = text
             .split(separator: "|", omittingEmptySubsequences: false)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -402,27 +454,56 @@ struct HAClient {
             let v = parts[i]
             return (v == "unknown" || v == "unavailable" || v == "None") ? "" : v
         }
-        func display(_ raw: String, unit: String, digits: Int) -> String {
+        func display(_ raw: String, field: DeviceKind.Field) -> String {
+            if let mapped = field.textMap[raw] { return mapped }
             guard let d = Double(raw) else { return raw.isEmpty ? "--" : raw }
-            let number = String(format: "%.\(digits)f", d)
-            return unit.isEmpty ? number : number + " " + unit
+            let number = String(format: "%.\(field.digits)f", d)
+            return field.unit.isEmpty ? number : number + " " + field.unit
         }
 
-        var fields: [(String, String)] = []
-        for (i, f) in kind.fields.enumerated() {
-            fields.append((f.label, display(rawValue(i), unit: f.unit, digits: f.digits)))
+        var sections: [DetailSection] = []
+        var cursor = 0
+        var rawByLabel: [String: Double] = [:]
+
+        for group in groups {
+            var rows: [(String, String)] = []
+            for field in group.fields {
+                let raw = rawValue(cursor)
+                if let d = Double(raw) { rawByLabel[field.label] = d }
+                rows.append((field.label, display(raw, field: field)))
+                cursor += 1
+            }
+            sections.append(DetailSection(title: group.title, fields: rows))
+        }
+
+        // 折算剩余电量：总压 × 剩余 Ah ÷ 1000（与 HA 面板同算法）
+        if kind == .battery,
+           let voltage = rawByLabel["电压"] ?? rawByLabel["总压"],
+           let ah = rawByLabel["BMS 剩余容量"] ?? rawByLabel["剩余容量"] {
+            let kwh = voltage * ah / 1000.0
+            if let idx = sections.firstIndex(where: { $0.title == "逆变器数据" }) {
+                sections[idx].fields.append(("折算剩余电量", String(format: "%.2f kWh", kwh)))
+            }
         }
 
         var cells: [Double] = []
-        let start = kind.fields.count
+        let start = allFields.count
         for i in start..<(start + kind.cellEntities.count) where i < parts.count {
             if let d = Double(parts[i]) { cells.append(d) }
         }
 
-        let note = kind == .battery
-            ? "折算剩余电量 = BMS 实时总压 × BMS 剩余 Ah ÷ 1000，是参考值，不等同实验室可释放电量。"
-            : nil
+        let note: String?
+        switch kind {
+        case .battery:
+            note = "折算剩余电量 = BMS 实时总压 × BMS 剩余 Ah ÷ 1000，是参考值，不等同实验室可释放电量。"
+        case .grid:
+            note = "当前功率只显示网关真实发布值；正值取电，负值馈电，零值正常，不用差值猜测。"
+        case .inverter:
+            note = "码值与说明取自说明书「7.1 报错代码」；故障与告警是两张独立码表。"
+        default:
+            note = nil
+        }
 
-        return DeviceDetail(fields: fields, cells: cells, note: note)
+        return DeviceDetail(sections: sections, cells: cells, note: note)
     }
 }

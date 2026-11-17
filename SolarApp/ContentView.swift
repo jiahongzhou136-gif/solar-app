@@ -159,7 +159,7 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                WeatherBackdrop(kind: data.weather)
+                WeatherBackdrop(kind: data.weather, isNight: data.isNight)
                     .ignoresSafeArea()
 
                 ScrollView(showsIndicators: false) {
@@ -258,11 +258,7 @@ struct ContentView: View {
 
     private func deviceCard(_ kind: DeviceKind) -> some View {
         let (value, footnote) = summary(for: kind)
-        return Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            selected = kind
-        } label: {
-            VStack(alignment: .leading, spacing: 0) {
+        return VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .top) {
                     iconBadge(kind.icon)
                     Spacer(minLength: 4)
@@ -292,11 +288,13 @@ struct ContentView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 11)
             .frame(maxWidth: .infinity, minHeight: 118, alignment: .leading)
-        }
-        .buttonStyle(CardPressStyle())
         .contentShape(RoundedRectangle(cornerRadius: Design.cardRadius, style: .continuous))
-        .matchedTransitionSource(id: kind.id, in: zoomNS)
         .modifier(GlassCard(radius: Design.cardRadius))
+        .onTapGesture {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            selected = kind
+        }
+        .matchedTransitionSource(id: kind.id, in: zoomNS)
     }
 
     private func iconBadge(_ name: String) -> some View {
@@ -337,11 +335,7 @@ struct ContentView: View {
     // MARK: 电池整行卡
 
     private var batteryCard: some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            selected = .battery
-        } label: {
-            HStack(spacing: 12) {
+        HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(alignment: .top) {
                         iconBadge(DeviceKind.battery.icon)
@@ -377,11 +371,13 @@ struct ContentView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 11)
             .frame(maxWidth: .infinity, minHeight: 134, alignment: .leading)
-        }
-        .buttonStyle(CardPressStyle())
         .contentShape(RoundedRectangle(cornerRadius: Design.rowRadius, style: .continuous))
-        .matchedTransitionSource(id: DeviceKind.battery.id, in: zoomNS)
         .modifier(GlassCard(radius: Design.rowRadius))
+        .onTapGesture {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            selected = .battery
+        }
+        .matchedTransitionSource(id: DeviceKind.battery.id, in: zoomNS)
     }
 
     private var batteryHeadline: String {
@@ -466,13 +462,12 @@ struct ContentView: View {
 
     // MARK: 取数
 
-    /// 与 HA 数据源同频：逆变器 Modbus 1 秒一采，BMS 蓝牙 5 秒一采。
-    /// 视图消失时 Task 自动取消。
+    /// Modbus 6 段 × 1.2s throttle ≈ 7.2s 一轮，2 秒轮询足以跟上变化
     @MainActor
     private func refreshLoop() async {
         await refresh()
         while !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 1 * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: 2 * 1_000_000_000)
             if Task.isCancelled { break }
             await refresh()
         }
@@ -508,7 +503,11 @@ struct GlassCard: ViewModifier {
 
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
-            content.glassEffect(.regular, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            // .clear 比 .regular 通透：不做强磨砂，保留背景可读性
+            content.glassEffect(
+                .clear.tint(Color.white.opacity(0.06)),
+                in: RoundedRectangle(cornerRadius: radius, style: .continuous)
+            )
         } else {
             content
                 .background(
@@ -526,7 +525,7 @@ struct GlassCard: ViewModifier {
 struct GlassCircle: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
-            content.glassEffect(.regular, in: Circle())
+            content.glassEffect(.clear, in: Circle())
         } else {
             content
                 .background(.ultraThinMaterial, in: Circle())
@@ -599,18 +598,23 @@ struct BatteryGlyph: View {
 
 struct WeatherBackdrop: View {
     let kind: WeatherKind
+    var isNight: Bool = false
 
     @State private var drift: CGFloat = -1
     @State private var zoom: CGFloat = 1.04
     @State private var sunPulse: CGFloat = 0.9
     @State private var moonPulse: CGFloat = 0.86
 
+    private var imageName: String {
+        isNight ? WeatherKind.night.imageName : kind.imageName
+    }
+
     var body: some View {
         GeometryReader { geo in
             ZStack {
                 Palette.bg
 
-                Image(kind.imageName)
+                Image(imageName)
                     .resizable()
                     .scaledToFill()
                     .frame(width: geo.size.width, height: geo.size.height)
@@ -618,21 +622,23 @@ struct WeatherBackdrop: View {
                     .offset(x: drift * 10, y: drift * 5)
                     .clipped()
 
-                if kind == .sunny { sunOrb(in: geo.size) }
-                if kind == .night {
+                if !isNight && kind == .sunny { sunOrb(in: geo.size) }
+                if isNight {
                     starField(in: geo.size)
                     moonOrb(in: geo.size)
                 }
                 if kind == .rain { RainLayer().allowsHitTesting(false) }
 
-                Clouds(size: geo.size, kind: kind)
+                Clouds(size: geo.size, kind: isNight ? .night : kind)
 
                 LinearGradient(
-                    colors: [
-                        Color(hex: 0x03182D).opacity(0.10),
-                        Color(hex: 0x03182D).opacity(0.32),
-                        Color(hex: 0x02101F).opacity(0.86),
-                    ],
+                    colors: isNight
+                        ? [Color(hex: 0x01060E).opacity(0.34),
+                           Color(hex: 0x020A16).opacity(0.52),
+                           Color(hex: 0x01060E).opacity(0.88)]
+                        : [Color(hex: 0x03182D).opacity(0.10),
+                           Color(hex: 0x03182D).opacity(0.32),
+                           Color(hex: 0x02101F).opacity(0.86)],
                     startPoint: .top,
                     endPoint: .bottom
                 )
@@ -640,6 +646,7 @@ struct WeatherBackdrop: View {
             .frame(width: geo.size.width, height: geo.size.height)
         }
         .ignoresSafeArea()
+        .animation(.easeInOut(duration: 0.7), value: isNight)
         .onAppear {
             withAnimation(.easeInOut(duration: 13).repeatForever(autoreverses: true)) {
                 drift = 1
@@ -827,7 +834,11 @@ struct LuminaHero: View {
             .frame(width: w, height: h)
         }
         .aspectRatio(boxW / boxH, contentMode: .fit)
-        .modifier(GlassCard(radius: Design.rowRadius))
+        .clipShape(RoundedRectangle(cornerRadius: Design.rowRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Design.rowRadius, style: .continuous)
+                .stroke(Color.white.opacity(0.20), lineWidth: 0.8)
+        )
         .onAppear {
             withAnimation(.linear(duration: 3.4).repeatForever(autoreverses: false)) {
                 dashPhase = 220
@@ -1024,7 +1035,7 @@ struct ForecastBar: View {
     }
 
     private var secondLine: String {
-        var parts: [String] = [data.weather.label]
+        var parts: [String] = [data.isNight ? "夜间" : data.weather.label]
         if let t = data.forecastTomorrow {
             parts.append("明日预计 \(Fmt.kwh(t))")
         }
