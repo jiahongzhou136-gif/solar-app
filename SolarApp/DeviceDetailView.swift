@@ -41,13 +41,13 @@ struct DeviceDetailView: View {
                         if let note = detail.note {
                             Text(note)
                                 .font(.system(size: 11))
-                                .foregroundStyle(Color(hex: 0x8FA9BD))
+                                .foregroundStyle(Palette.sub)
                                 .lineSpacing(3)
                         }
 
                         Text("数据来自 HA 实体 · 每 2 秒同步 · 下拉刷新")
                             .font(.system(size: 11))
-                            .foregroundStyle(Color(hex: 0x8FA9BD))
+                            .foregroundStyle(Palette.sub)
                             .frame(maxWidth: .infinity)
                             .padding(.top, 2)
                     }
@@ -112,7 +112,7 @@ struct DeviceDetailView: View {
                     .foregroundStyle(Palette.text)
                 Text(kind.desc)
                     .font(.system(size: 12))
-                    .foregroundStyle(Color(hex: 0xA9C2D6))
+                    .foregroundStyle(Palette.rowLabel)
             }
             Spacer(minLength: 8)
             Button {
@@ -146,17 +146,17 @@ struct DeviceDetailView: View {
                             .foregroundStyle(active ? Color(hex: 0x0A2639) : Color(hex: 0xDCECF8))
                         Text(subtitle(for: section.title))
                             .font(.system(size: 9.5))
-                            .foregroundStyle(active ? Color(hex: 0x38566B) : Color(hex: 0xA9C2D6))
+                            .foregroundStyle(active ? Color(hex: 0x38566B) : Palette.rowLabel)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 11)
                     .padding(.vertical, 10)
                     .background {
                         if active {
-                            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                            RoundedRectangle(cornerRadius: Design.controlRadius, style: .continuous)
                                 .fill(Color(hex: 0xEBF6FF).opacity(0.94))
                         } else {
-                            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                            RoundedRectangle(cornerRadius: Design.controlRadius, style: .continuous)
                                 .fill(Color.white.opacity(0.07))
                         }
                     }
@@ -183,7 +183,7 @@ struct DeviceDetailView: View {
                 HStack(spacing: 12) {
                     Text(item.0)
                         .font(.system(size: 13))
-                        .foregroundStyle(Color(hex: 0xA9C2D6))
+                        .foregroundStyle(Palette.rowLabel)
                     Spacer(minLength: 8)
                     Text(item.1)
                         .font(.system(size: 13.5, weight: .semibold, design: .rounded))
@@ -218,7 +218,7 @@ struct DeviceDetailView: View {
                 if let maxV = cells.max(), let minV = cells.min() {
                     Text(String(format: "压差 %.3f V", maxV - minV))
                         .font(.system(size: 11))
-                        .foregroundStyle(Color(hex: 0xA9C2D6))
+                        .foregroundStyle(Palette.rowLabel)
                 }
             }
 
@@ -230,7 +230,7 @@ struct DeviceDetailView: View {
                     VStack(spacing: 2) {
                         Text(String(format: "%02d", idx + 1))
                             .font(.system(size: 9.5))
-                            .foregroundStyle(Color(hex: 0x8FA9BD))
+                            .foregroundStyle(Palette.sub)
                         Text(String(format: "%.3f", v))
                             .font(.system(size: 12, weight: .medium, design: .rounded))
                             .foregroundStyle(Palette.text)
@@ -264,13 +264,13 @@ struct DeviceDetailView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("读取失败")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color(hex: 0xFF9B9B))
+                .foregroundStyle(Palette.danger)
             Text(message)
                 .font(.system(size: 11))
                 .foregroundStyle(Color(hex: 0xD8B4B4))
             Text("检查 HA 地址、令牌，或下拉重试")
                 .font(.system(size: 10))
-                .foregroundStyle(Color(hex: 0x8FA9BD))
+                .foregroundStyle(Palette.sub)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -20,7 +20,8 @@ enum Design {
     static let cardRadius: CGFloat = 22
     static let iconRadius: CGFloat = 10
     static let chipRadius: CGFloat = 12
-    static let controlRadius: CGFloat = 14
+    static let buoyRadius: CGFloat = 7
+    static let controlRadius: CGFloat = 15
 
     static let gap: CGFloat = 9
     static let padH: CGFloat = 14
@@ -40,8 +41,16 @@ enum Palette {
     static let accent = Color(hex: 0xF5A623)
     static let cyan = Color(hex: 0x41F4FF)
     static let text = Color(hex: 0xF6FBFF)
+    /// 次要文字：说明、副行
     static let dim = Color(hex: 0x9FB6C9)
+    /// 三级文字：弱提示
     static let sub = Color(hex: 0x8FA9BD)
+    /// 卡片标签（主界面设备名）
+    static let label = Color(hex: 0xA8C0D2)
+    /// 详情页字段标签
+    static let rowLabel = Color(hex: 0xA9C2D6)
+    /// 错误标题
+    static let danger = Color(hex: 0xFF9B9B)
 }
 
 extension Color {
@@ -102,38 +111,6 @@ enum Fmt {
     }
 
     static func clock(_ d: Date) -> String { clockFmt.string(from: d) }
-}
-
-// MARK: - 液态玻璃容器
-
-/// iOS 26+ 用原生 Liquid Glass；低版本回退到 ultraThinMaterial
-struct GlassSurface<Content: View>: View {
-    let radius: CGFloat
-    var tint: Color? = nil
-    var interactive: Bool = false
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        if #available(iOS 26.0, *) {
-            content
-                .glassEffect(
-                    interactive
-                        ? .regular.tint(tint ?? .clear).interactive()
-                        : .regular.tint(tint ?? .clear),
-                    in: RoundedRectangle(cornerRadius: radius, style: .continuous)
-                )
-        } else {
-            content
-                .background(
-                    .ultraThinMaterial,
-                    in: RoundedRectangle(cornerRadius: radius, style: .continuous)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: radius, style: .continuous)
-                        .stroke(Color.white.opacity(0.14), lineWidth: 0.7)
-                )
-        }
-    }
 }
 
 // MARK: - 主视图
@@ -228,7 +205,7 @@ struct ContentView: View {
                     .foregroundStyle(Palette.text)
                 Text(statusLine)
                     .font(Design.caption)
-                    .foregroundStyle(errorText == nil ? Palette.dim : Color(hex: 0xFF9B9B))
+                    .foregroundStyle(errorText == nil ? Palette.dim : Palette.danger)
                     .lineLimit(2)
                     .minimumScaleFactor(0.75)
             }
@@ -272,7 +249,7 @@ struct ContentView: View {
 
                 Text(kind.title)
                     .font(Design.label)
-                    .foregroundStyle(Color(hex: 0xA8C0D2))
+                    .foregroundStyle(Palette.label)
                 Text(value)
                     .font(Design.cardValue)
                     .foregroundStyle(Palette.text)
@@ -319,7 +296,8 @@ struct ContentView: View {
             return (Fmt.watt(data.pv1), "PV2 未接入")
         case .inverter:
             let temp = data.inverterTemp.map { String(format: "实时 · %.1f °C", $0) } ?? "实时"
-            return (Fmt.watt(data.pvTotal ?? data.pv1), temp)
+            // 与面板 _inverterPowerKey() 一致：现场无 inverter_output_power 时退回 load_power
+            return (Fmt.watt(data.load ?? data.pvTotal ?? data.pv1), temp)
         case .battery:
             let p = data.batteryPower ?? 0
             let text = p > 20 ? "充电 \(Fmt.watt(p))" : (p < -20 ? "放电 \(Fmt.watt(-p))" : "待机 0 W")
@@ -350,7 +328,7 @@ struct ContentView: View {
 
                     Text("储能电池")
                         .font(Design.label)
-                        .foregroundStyle(Color(hex: 0xA8C0D2))
+                        .foregroundStyle(Palette.label)
                     Text(batteryHeadline)
                         .font(Design.cardValue)
                         .foregroundStyle(Palette.text)
@@ -425,7 +403,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label)
                 .font(.system(size: 11))
-                .foregroundStyle(Color(hex: 0xA9C2D6))
+                .foregroundStyle(Palette.rowLabel)
             Text(value)
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                 .foregroundStyle(Palette.text)
@@ -470,7 +448,10 @@ struct ContentView: View {
         while !Task.isCancelled {
             try? await Task.sleep(nanoseconds: 2 * 1_000_000_000)
             if Task.isCancelled { break }
-            await refresh()
+            // 详情页打开时主界面被覆盖，暂停轮询避免两路请求叠加
+            if selected == nil {
+                await refresh()
+            }
         }
     }
 
@@ -908,10 +889,10 @@ struct LuminaHero: View {
             .padding(.vertical, 3)
             .background(
                 Color(hex: 0x021424).opacity(0.82),
-                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                in: RoundedRectangle(cornerRadius: Design.buoyRadius, style: .continuous)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: Design.buoyRadius, style: .continuous)
                     .stroke(Color(hex: 0xE0FCFF).opacity(0.45), lineWidth: 0.6)
             )
             .shadow(color: Color(hex: 0x19EEFF).opacity(0.42), radius: 4)

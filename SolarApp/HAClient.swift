@@ -163,6 +163,23 @@ enum DeviceKind: String, CaseIterable, Identifiable, Hashable {
         let digits: Int
         /// 值为 on/off 这类文本时的映射
         var textMap: [String: String] = [:]
+        /// 实体在现场不存在时的静态文案（例如 PV2「未接入」）
+        var missingText: String? = nil
+        /// 主实体缺失或不可用时，改从该实体派生（与 HA 面板 fallback 同源）
+        var deriveFrom: String? = nil
+        var derive: Derive = .none
+        /// 数值为 0 时改显示的文字（例如告警码「无」）
+        var zeroText: String? = nil
+
+        enum Derive {
+            case none
+            /// 原样取备用实体的值
+            case fallback
+            /// 正数部分（购电）
+            case importPower
+            /// 负数部分的绝对值（馈网）
+            case exportPower
+        }
     }
 
     struct FieldGroup {
@@ -179,27 +196,32 @@ enum DeviceKind: String, CaseIterable, Identifiable, Hashable {
                 .init(label: "PV1 功率", entity: p + "pv1_power", unit: "W", digits: 0),
                 .init(label: "PV1 电压", entity: p + "pv1_voltage", unit: "V", digits: 1),
                 .init(label: "PV1 电流", entity: p + "pv1_current", unit: "A", digits: 2),
-                .init(label: "PV2", entity: p + "pv2_power", unit: "W", digits: 0),
+                .init(label: "PV2", entity: p + "pv2_power", unit: "W", digits: 0, missingText: "未接入"),
                 .init(label: "今日发电", entity: p + "daily_pv_energy", unit: "kWh", digits: 2),
                 .init(label: "总发电", entity: p + "total_pv_energy", unit: "kWh", digits: 2),
             ])]
 
         case .inverter:
             return [FieldGroup(title: "实时运行", fields: [
-                .init(label: "输出 / 负载", entity: p + "pv_total_power", unit: "W", digits: 0),
+                // 与面板 _inverterPowerKey() 一致：有 inverter_output_power 用它，否则退回 load_power
+                .init(label: "输出 / 负载", entity: p + "inverter_output_power", unit: "W", digits: 0,
+                      deriveFrom: p + "load_power", derive: .fallback),
                 .init(label: "逆变器温度", entity: p + "inverter_temperature", unit: "°C", digits: 1),
                 .init(label: "Bus1 内部电压", entity: p + "bus1_voltage", unit: "V", digits: 1),
-                .init(label: "故障", entity: p + "inverter_fault_code_raw", unit: "", digits: 0),
-                .init(label: "主告警", entity: p + "inverter_warning_code_raw", unit: "", digits: 0),
+                // 现场只有一个码寄存器，故障通道未接线；面板同样不显示该行
+                .init(label: "主告警", entity: p + "inverter_warning_code_raw", unit: "", digits: 0,
+                      zeroText: "无"),
             ])]
 
         case .grid:
             return [FieldGroup(title: "实时运行", fields: [
-                .init(label: "当前购电", entity: p + "grid_import_power", unit: "W", digits: 0),
-                .init(label: "当前馈网", entity: p + "grid_export_power", unit: "W", digits: 0),
+                // 现场无 grid_import_power / grid_export_power，与面板一致从 grid_power_raw 拆分
+                .init(label: "当前购电", entity: p + "grid_import_power", unit: "W", digits: 0,
+                      deriveFrom: p + "grid_power_raw", derive: .importPower),
+                .init(label: "当前馈网", entity: p + "grid_export_power", unit: "W", digits: 0,
+                      deriveFrom: p + "grid_power_raw", derive: .exportPower),
                 .init(label: "实时功率（原始）", entity: p + "grid_power_raw", unit: "W", digits: 0),
                 .init(label: "今日购电", entity: p + "daily_grid_import_energy", unit: "kWh", digits: 2),
-                .init(label: "今日馈网", entity: p + "daily_grid_export_energy", unit: "kWh", digits: 2),
             ])]
 
         case .load:
@@ -233,7 +255,7 @@ enum DeviceKind: String, CaseIterable, Identifiable, Hashable {
                     .init(label: "均衡", entity: "binary_sensor.guang_fu_ben_di_wang_guan_bms_balancing",
                           unit: "", digits: 0,
                           textMap: ["on": "均衡中", "off": "未均衡"]),
-                    .init(label: "告警", entity: p + "bms_errors", unit: "", digits: 0),
+                    .init(label: "告警", entity: p + "bms_errors", unit: "", digits: 0, missingText: "无告警"),
                 ]),
             ]
         }
@@ -442,54 +464,87 @@ struct HAClient {
     func fetchDetail(_ kind: DeviceKind) async throws -> DeviceDetail {
         let groups = kind.groups
         let allFields = groups.flatMap { $0.fields }
-        let ids = allFields.map(\.entity) + kind.cellEntities
-        let text = try await postTemplate(ids)
 
+        // 主实体 + 派生来源，去重后一次请求；取值按实体名回查，不依赖下标
+        var ordered: [String] = []
+        for field in allFields {
+            if !ordered.contains(field.entity) { ordered.append(field.entity) }
+            if let src = field.deriveFrom, !ordered.contains(src) { ordered.append(src) }
+        }
+        for entity in kind.cellEntities where !ordered.contains(entity) { ordered.append(entity) }
+
+        let text = try await postTemplate(ordered)
         let parts = text
             .split(separator: "|", omittingEmptySubsequences: false)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
 
-        func rawValue(_ i: Int) -> String {
-            guard i < parts.count else { return "" }
+        func rawValue(_ entity: String) -> String {
+            guard let i = ordered.firstIndex(of: entity), i < parts.count else { return "" }
             let v = parts[i]
             return (v == "unknown" || v == "unavailable" || v == "None") ? "" : v
         }
-        func display(_ raw: String, field: DeviceKind.Field) -> String {
-            if let mapped = field.textMap[raw] { return mapped }
-            guard let d = Double(raw) else { return raw.isEmpty ? "--" : raw }
-            let number = String(format: "%.\(field.digits)f", d)
-            return field.unit.isEmpty ? number : number + " " + field.unit
+        func number(_ entity: String) -> Double? { Double(rawValue(entity)) }
+        func display(_ value: Double, _ field: DeviceKind.Field) -> String {
+            let s = String(format: "%.\(field.digits)f", value)
+            return field.unit.isEmpty ? s : s + " " + field.unit
         }
 
         var sections: [DetailSection] = []
-        var cursor = 0
-        var rawByLabel: [String: Double] = [:]
 
         for group in groups {
             var rows: [(String, String)] = []
             for field in group.fields {
-                let raw = rawValue(cursor)
-                if let d = Double(raw) { rawByLabel[field.label] = d }
-                rows.append((field.label, display(raw, field: field)))
-                cursor += 1
+                // 1) 先读主实体；2) 缺失时按规则从备用实体派生
+                var value = number(field.entity)
+                if value == nil, let src = field.deriveFrom, let base = number(src) {
+                    switch field.derive {
+                    case .none:        break
+                    case .fallback:    value = base
+                    case .importPower: value = max(base, 0)
+                    case .exportPower: value = max(-base, 0)
+                    }
+                }
+
+                let shown: String
+                if let v = value {
+                    let mapped = field.textMap[rawValue(field.entity)] ?? ""
+                    if let zero = field.zeroText, abs(v) < 0.0001 {
+                        shown = zero
+                    } else if !mapped.isEmpty {
+                        shown = mapped
+                    } else {
+                        shown = display(v, field)
+                    }
+                } else {
+                    let raw = rawValue(field.entity)
+                    let mapped = field.textMap[raw] ?? ""
+                    if !mapped.isEmpty {
+                        shown = mapped
+                    } else if let missing = field.missingText {
+                        shown = missing
+                    } else {
+                        shown = raw.isEmpty ? "--" : raw
+                    }
+                }
+                rows.append((field.label, shown))
             }
             sections.append(DetailSection(title: group.title, fields: rows))
         }
 
-        // 折算剩余电量：总压 × 剩余 Ah ÷ 1000（与 HA 面板同算法）
+        // 折算剩余电量：bms_pack_voltage × bms_remaining_capacity ÷ 1000（与面板 _remainingEnergyKwh 同源）
+        let prefix = SolarConfig.prefix
         if kind == .battery,
-           let voltage = rawByLabel["电压"] ?? rawByLabel["总压"],
-           let ah = rawByLabel["BMS 剩余容量"] ?? rawByLabel["剩余容量"] {
-            let kwh = voltage * ah / 1000.0
-            if let idx = sections.firstIndex(where: { $0.title == "逆变器数据" }) {
-                sections[idx].fields.append(("折算剩余电量", String(format: "%.2f kWh", kwh)))
-            }
+           let voltage = number(prefix + "bms_pack_voltage"),
+           let ampHours = number(prefix + "bms_remaining_capacity"),
+           let idx = sections.firstIndex(where: { $0.title == "逆变器数据" }) {
+            sections[idx].fields.append(
+                ("折算剩余电量", String(format: "%.2f kWh", voltage * ampHours / 1000.0))
+            )
         }
 
         var cells: [Double] = []
-        let start = allFields.count
-        for i in start..<(start + kind.cellEntities.count) where i < parts.count {
-            if let d = Double(parts[i]) { cells.append(d) }
+        for entity in kind.cellEntities {
+            if let v = number(entity) { cells.append(v) }
         }
 
         let note: String?
@@ -497,9 +552,9 @@ struct HAClient {
         case .battery:
             note = "折算剩余电量 = BMS 实时总压 × BMS 剩余 Ah ÷ 1000，是参考值，不等同实验室可释放电量。"
         case .grid:
-            note = "当前功率只显示网关真实发布值；正值取电，负值馈电，零值正常，不用差值猜测。"
+            note = "购电与馈网由网关实时功率按正负拆分；正值取电，负值馈电，不用光伏、负载与电池差值猜测。"
         case .inverter:
-            note = "码值与说明取自说明书「7.1 报错代码」；故障与告警是两张独立码表。"
+            note = "码值与说明取自说明书「7.1 报错代码」；本机只接一路码寄存器，因此只显示主告警。"
         default:
             note = nil
         }

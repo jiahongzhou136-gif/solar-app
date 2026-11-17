@@ -27,6 +27,10 @@ enum RawHTTP {
             using: params
         )
 
+        // 保留 query，当前 /api/template 不带参数，避免以后加参数时静默丢失
+        let basePath = url.path.isEmpty ? "/" : url.path
+        let requestPath = url.query.map { basePath + "?" + $0 } ?? basePath
+
         return try await withThrowingTaskGroup(of: (Int, Data).self) { group in
             group.addTask {
                 try await perform(
@@ -34,7 +38,7 @@ enum RawHTTP {
                     host: host,
                     port: port,
                     isTLS: isTLS,
-                    path: url.path.isEmpty ? "/" : url.path,
+                    path: requestPath,
                     headers: headers,
                     body: body
                 )
@@ -107,8 +111,10 @@ enum RawHTTP {
                         .sorted()
                         .joined(separator: "\r\n")
 
+                    // IPv6 字面量在 Host 头里必须带方括号，否则服务端按非法 Host 处理
+                    let hostHeader = host.contains(":") ? "[\(host)]" : host
                     var head = "POST \(path) HTTP/1.1\r\n"
-                    head += "Host: \(host)"
+                    head += "Host: \(hostHeader)"
                     head += (port == (isTLS ? 443 : 80)) ? "\r\n" : ":\(port)\r\n"
                     head += headerLines + "\r\n"
                     head += "Content-Length: \(body.count)\r\n"
