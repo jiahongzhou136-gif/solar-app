@@ -3,9 +3,8 @@ import UIKit
 
 // MARK: - 设计系统
 //
-// 圆角是同心层级，不是所有卡片都用屏幕半径。
-// iPhone 17 Pro 屏幕圆角 62pt（ScreenCorners 实测），卡片距边 14pt，
-// 外层容器 = 62 − 14 = 48pt，弧线与屏幕平行同心；内层按体量递减。
+// iPhone 17 Pro 同心圆角：屏幕 62pt − 边距 14pt = 48pt 容器；
+// 整行卡片 28pt、半宽卡片 22pt、图标 10pt，全部 .continuous（超椭圆）。
 
 enum Design {
     static var screenRadius: CGFloat {
@@ -16,29 +15,32 @@ enum Design {
     }
     static let screenPadding: CGFloat = 14
     static var containerRadius: CGFloat { max(20, screenRadius - screenPadding) }
-    static let cardRadius: CGFloat = 28
-    static let chipRadius: CGFloat = 16
 
-    static let gap: CGFloat = 12
+    static let rowRadius: CGFloat = 28
+    static let cardRadius: CGFloat = 22
+    static let iconRadius: CGFloat = 10
+    static let controlRadius: CGFloat = 14
+
+    static let gap: CGFloat = 9
     static let padH: CGFloat = 14
 
     static let titleFont = Font.system(size: 17, weight: .semibold)
     static let cardValue = Font.system(size: 23, weight: .bold, design: .rounded)
-    static let label = Font.system(size: 12, weight: .medium)
-    static let caption = Font.system(size: 10.5, weight: .medium)
+    static let label = Font.system(size: 11, weight: .medium)
+    static let caption = Font.system(size: 10, weight: .regular)
 
     static let springy = Animation.spring(response: 0.45, dampingFraction: 0.84)
     static let snappy = Animation.snappy(duration: 0.34)
-    static let press = Animation.spring(response: 0.28, dampingFraction: 0.72)
+    static let press = Animation.spring(response: 0.26, dampingFraction: 0.7)
 }
 
 enum Palette {
     static let bg = Color(hex: 0x0B1118)
-    static let card = Color(hex: 0x1A2430)
     static let accent = Color(hex: 0xF5A623)
     static let cyan = Color(hex: 0x41F4FF)
     static let text = Color(hex: 0xF6FBFF)
     static let dim = Color(hex: 0x9FB6C9)
+    static let sub = Color(hex: 0x8FA9BD)
 }
 
 extension Color {
@@ -60,6 +62,14 @@ enum Fmt {
         let f = NumberFormatter()
         f.numberStyle = .decimal
         f.maximumFractionDigits = 0
+        return f
+    }()
+
+    private static let twoFmt: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.minimumFractionDigits = 2
+        f.maximumFractionDigits = 2
         return f
     }()
 
@@ -85,7 +95,44 @@ enum Fmt {
         return String(format: "%.0f%%", v)
     }
 
+    static func temp(_ v: Double?) -> String {
+        guard let v else { return "--" }
+        return String(format: "%.1f °C", v)
+    }
+
     static func clock(_ d: Date) -> String { clockFmt.string(from: d) }
+}
+
+// MARK: - 液态玻璃容器
+
+/// iOS 26+ 用原生 Liquid Glass；低版本回退到 ultraThinMaterial
+struct GlassSurface<Content: View>: View {
+    let radius: CGFloat
+    var tint: Color? = nil
+    var interactive: Bool = false
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(
+                    interactive
+                        ? .regular.tint(tint ?? .clear).interactive()
+                        : .regular.tint(tint ?? .clear),
+                    in: RoundedRectangle(cornerRadius: radius, style: .continuous)
+                )
+        } else {
+            content
+                .background(
+                    .ultraThinMaterial,
+                    in: RoundedRectangle(cornerRadius: radius, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
+                        .stroke(Color.white.opacity(0.14), lineWidth: 0.7)
+                )
+        }
+    }
 }
 
 // MARK: - 主视图
@@ -99,41 +146,67 @@ struct ContentView: View {
     @State private var isLoading = false
     @State private var showSettings = false
     @State private var appeared = false
+    @State private var selected: DeviceKind?
+    @Namespace private var zoomNS
 
     private var configured: Bool {
         !haURL.trimmingCharacters(in: .whitespaces).isEmpty &&
         !haToken.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
+    private var client: HAClient { HAClient(baseURL: haURL, token: haToken) }
+
     var body: some View {
-        ZStack {
-            WeatherBackdrop(kind: data.weather)
-                .ignoresSafeArea()
+        NavigationStack {
+            ZStack {
+                WeatherBackdrop(kind: data.weather)
+                    .ignoresSafeArea()
 
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: Design.gap) {
-                    header
-                        .padding(.top, 6)
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: Design.gap) {
+                        header
+                            .padding(.top, 2)
 
-                    LuminaHero(data: data)
-                        .opacity(appeared ? 1 : 0)
-                        .offset(y: appeared ? 0 : 14)
+                        LuminaHero(data: data)
+                            .opacity(appeared ? 1 : 0)
+                            .offset(y: appeared ? 0 : 10)
 
-                    ForecastBar(data: data)
+                        ForecastBar(data: data)
 
-                    metricsGrid
+                        HStack(spacing: Design.gap) {
+                            deviceCard(.pv1)
+                            deviceCard(.inverter)
+                        }
 
-                    energyRow
+                        batteryCard
 
-                    panelButton
+                        HStack(spacing: Design.gap) {
+                            deviceCard(.grid)
+                            deviceCard(.load)
+                        }
+
+                        energyCard
+                    }
+                    .padding(.horizontal, Design.padH)
+                    .padding(.bottom, 20)
                 }
-                .padding(.horizontal, Design.padH)
-                .padding(.bottom, 34)
-            }
-            .refreshable { await refresh() }
+                .refreshable { await refresh() }
 
-            if !configured {
-                configHint
+                if !configured {
+                    configHint
+                }
+            }
+            .navigationBarHidden(true)
+            .navigationDestination(item: $selected) { kind in
+                DeviceDetailView(kind: kind, client: client)
+                    .navigationTransition(.zoom(sourceID: kind.id, in: zoomNS))
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView(haURL: $haURL, haToken: $haToken) {
+                    Task { await refresh() }
+                }
+                .presentationCornerRadius(Design.containerRadius)
+                .presentationDragIndicator(.visible)
             }
         }
         .preferredColorScheme(.dark)
@@ -142,26 +215,23 @@ struct ContentView: View {
             withAnimation(Design.springy) { appeared = true }
             await refresh()
         }
-        .sheet(isPresented: $showSettings) {
-            SettingsView(haURL: $haURL, haToken: $haToken)
-                .presentationCornerRadius(Design.containerRadius)
-                .presentationDragIndicator(.visible)
-        }
     }
 
     // MARK: 头部
 
     private var header: some View {
         HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text("光伏监控")
                     .font(Design.titleFont)
                     .foregroundStyle(Palette.text)
                 Text(statusLine)
                     .font(Design.caption)
                     .foregroundStyle(errorText == nil ? Palette.dim : Color(hex: 0xFF9B9B))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
             }
-            Spacer()
+            Spacer(minLength: 8)
             Button {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 showSettings = true
@@ -170,131 +240,198 @@ struct ContentView: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Palette.text)
                     .frame(width: 36, height: 36)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .overlay(Circle().stroke(Color.white.opacity(0.16), lineWidth: 0.7))
             }
-            .buttonStyle(PressableStyle())
+            .buttonStyle(.plain)
+            .modifier(GlassCircle())
         }
     }
 
     private var statusLine: String {
         if let e = errorText { return e }
-        if isLoading && data.updatedAt.timeIntervalSince1970 < 100 { return "正在读取…" }
+        if isLoading { return "正在读取…" }
+        if data.isEmptyReading { return "暂无数据，下拉刷新" }
         return "更新于 \(Fmt.clock(data.updatedAt))"
     }
 
-    // MARK: 四个指标
+    // MARK: 半宽卡
 
-    private var metricsGrid: some View {
-        LazyVGrid(
-            columns: [GridItem(.flexible(), spacing: Design.gap),
-                      GridItem(.flexible(), spacing: Design.gap)],
-            spacing: Design.gap
-        ) {
-            MetricCard(
-                icon: "sun.max.fill",
-                tint: Color(hex: 0xFFD166),
-                title: "今日发电",
-                value: Fmt.kwh(data.daily),
-                progress: data.forecastProgress,
-                footnote: forecastFootnote
+    private func deviceCard(_ kind: DeviceKind) -> some View {
+        let (value, footnote) = summary(for: kind)
+        return Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            selected = kind
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .top) {
+                    iconBadge(kind.icon)
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.42))
+                }
+
+                Spacer(minLength: 7)
+
+                Text(kind.title)
+                    .font(Design.label)
+                    .foregroundStyle(Color(hex: 0xA8C0D2))
+                Text(value)
+                    .font(Design.cardValue)
+                    .foregroundStyle(Palette.text)
+                    .contentTransition(.numericText())
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.66)
+                Text(footnote)
+                    .font(Design.caption)
+                    .foregroundStyle(Palette.sub)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .padding(.top, 1)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .frame(maxWidth: .infinity, minHeight: 118, alignment: .leading)
+        }
+        .buttonStyle(CardPressStyle())
+        .matchedTransitionSource(id: kind.id, in: zoomNS)
+        .modifier(GlassCard(radius: Design.cardRadius))
+    }
+
+    private func iconBadge(_ name: String) -> some View {
+        Image(systemName: name)
+            .font(.system(size: 15, weight: .medium))
+            .foregroundStyle(Palette.text)
+            .frame(width: 32, height: 32)
+            .background(
+                Color.white.opacity(0.10),
+                in: RoundedRectangle(cornerRadius: Design.iconRadius, style: .continuous)
             )
-            MetricCard(
-                icon: "chart.line.uptrend.xyaxis",
-                tint: Color(hex: 0x7FD8FF),
-                title: "今日预测",
-                value: Fmt.kwh(data.forecastToday),
-                progress: nil,
-                footnote: data.forecastRemaining.map { "剩余 \(Fmt.kwh($0))" }
+            .overlay(
+                RoundedRectangle(cornerRadius: Design.iconRadius, style: .continuous)
+                    .stroke(Color.white.opacity(0.16), lineWidth: 0.6)
             )
-            MetricCard(
-                icon: "battery.75percent",
-                tint: Color(hex: 0x6FE7C7),
-                title: "电池 SOC",
-                value: Fmt.percent(data.soc),
-                progress: data.soc.map { min(max($0 / 100, 0), 1) },
-                footnote: batteryFootnote
-            )
-            MetricCard(
-                icon: "house.fill",
-                tint: Color(hex: 0xFFB86B),
-                title: "当前负载",
-                value: Fmt.watt(data.load),
-                progress: nil,
-                footnote: data.grid.map { "市电 \(Fmt.watt($0))" }
-            )
+    }
+
+    private func summary(for kind: DeviceKind) -> (String, String) {
+        switch kind {
+        case .pv1:
+            return (Fmt.watt(data.pv1), "PV2 未接入")
+        case .inverter:
+            let temp = data.inverterTemp.map { String(format: "实时 · %.1f °C", $0) } ?? "实时"
+            return (Fmt.watt(data.pvTotal ?? data.pv1), temp)
+        case .battery:
+            let p = data.batteryPower ?? 0
+            let text = p > 20 ? "充电 \(Fmt.watt(p))" : (p < -20 ? "放电 \(Fmt.watt(-p))" : "待机 0 W")
+            return (text, p > 20 ? "能量流入" : (p < -20 ? "能量流出" : "待机"))
+        case .grid:
+            let g = data.grid ?? 0
+            let direction = abs(g) < 50 ? "正常" : (g > 0 ? "取电" : "馈电")
+            return (Fmt.watt(data.grid), "\(direction) · 市电\(g > 0 ? "流入" : (g < 0 ? "流出" : "待机"))")
+        case .load:
+            return (Fmt.watt(data.load), "当前用电")
         }
     }
 
-    private var forecastFootnote: String? {
-        guard let p = data.forecastProgress else { return nil }
-        return "预测完成 \(Int((p * 100).rounded()))%"
+    // MARK: 电池整行卡
+
+    private var batteryCard: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            selected = .battery
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .top) {
+                        iconBadge(DeviceKind.battery.icon)
+                        Spacer(minLength: 4)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.white.opacity(0.42))
+                    }
+
+                    Spacer(minLength: 7)
+
+                    Text("储能电池")
+                        .font(Design.label)
+                        .foregroundStyle(Color(hex: 0xA8C0D2))
+                    Text(batteryHeadline)
+                        .font(Design.cardValue)
+                        .foregroundStyle(Palette.text)
+                        .contentTransition(.numericText())
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.66)
+                    Text(batterySubline)
+                        .font(Design.caption)
+                        .foregroundStyle(Palette.sub)
+                        .padding(.top, 1)
+                }
+
+                Spacer(minLength: 0)
+
+                BatteryGlyph(soc: data.soc, charging: (data.batteryPower ?? 0) > 20)
+                    .frame(width: 62, height: 96)
+                    .padding(.trailing, 4)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            .frame(maxWidth: .infinity, minHeight: 134, alignment: .leading)
+        }
+        .buttonStyle(CardPressStyle())
+        .matchedTransitionSource(id: DeviceKind.battery.id, in: zoomNS)
+        .modifier(GlassCard(radius: Design.rowRadius))
     }
 
-    private var batteryFootnote: String? {
-        guard let p = data.batteryPower else { return nil }
+    private var batteryHeadline: String {
+        let p = data.batteryPower ?? 0
         if p > 20 { return "充电 \(Fmt.watt(p))" }
         if p < -20 { return "放电 \(Fmt.watt(-p))" }
+        return "待机 0 W"
+    }
+
+    private var batterySubline: String {
+        let p = data.batteryPower ?? 0
+        if p > 20 { return "能量流入" }
+        if p < -20 { return "能量流出" }
         return "待机"
     }
 
-    // MARK: 累计发电
+    // MARK: 今日能量
 
-    private var energyRow: some View {
-        HStack {
-            Label("累计发电", systemImage: "bolt.fill")
-                .font(Design.label)
-                .foregroundStyle(Palette.dim)
-            Spacer()
-            Text(Fmt.kwh(data.total, digits: 0))
-                .font(.system(size: 17, weight: .semibold, design: .rounded))
+    private var energyCard: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text("今日能量")
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Palette.text)
+
+            HStack(spacing: 4) {
+                energyItem("日充电", Fmt.kwh(data.dailyCharge, digits: 2))
+                energyItem("日放电", Fmt.kwh(data.dailyDischarge, digits: 2))
+                energyItem("日发电", Fmt.kwh(data.dailyPv, digits: 2))
+                energyItem("累计发电", Fmt.kwh(data.totalPv, digits: 1))
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .frame(maxWidth: .infinity, minHeight: 96, alignment: .leading)
+        .modifier(GlassCard(radius: Design.rowRadius))
+    }
+
+    private func energyItem(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 9, weight: .regular))
+                .foregroundStyle(Palette.dim)
+            Text(value)
+                .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(Palette.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.55)
                 .contentTransition(.numericText())
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(Palette.card.opacity(0.62), in: RoundedRectangle(cornerRadius: Design.cardRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Design.cardRadius, style: .continuous)
-                .stroke(Color.white.opacity(0.10), lineWidth: 0.7)
-        )
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: 打开完整面板
-
-    private var panelButton: some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-            if let url = panelURL { UIApplication.shared.open(url) }
-        } label: {
-            HStack {
-                Image(systemName: "rectangle.grid.2x2.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                Text("打开完整面板")
-                    .font(.system(size: 14, weight: .semibold))
-                Spacer()
-                Image(systemName: "arrow.up.right")
-                    .font(.system(size: 12, weight: .bold))
-            }
-            .foregroundStyle(Palette.accent)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 15)
-            .background(Palette.accent.opacity(0.13), in: RoundedRectangle(cornerRadius: Design.cardRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: Design.cardRadius, style: .continuous)
-                    .stroke(Palette.accent.opacity(0.38), lineWidth: 0.8)
-            )
-        }
-        .buttonStyle(PressableStyle())
-    }
-
-    private var panelURL: URL? {
-        let base = haURL.trimmingCharacters(in: .whitespaces)
-        guard !base.isEmpty else { return nil }
-        return URL(string: base + "/solar-board/solar")
-    }
-
-    // MARK: 未配置提示
+    // MARK: 未配置
 
     private var configHint: some View {
         VStack(spacing: 14) {
@@ -315,11 +452,7 @@ struct ContentView: View {
                 .background(Palette.accent, in: Capsule())
         }
         .padding(26)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Design.cardRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Design.cardRadius, style: .continuous)
-                .stroke(Color.white.opacity(0.14), lineWidth: 0.7)
-        )
+        .modifier(GlassCard(radius: Design.rowRadius))
         .padding(.horizontal, 34)
     }
 
@@ -334,7 +467,6 @@ struct ContentView: View {
         isLoading = true
         defer { isLoading = false }
         do {
-            let client = HAClient(baseURL: haURL, token: haToken)
             let fresh = try await client.fetchSolar()
             withAnimation(Design.snappy) {
                 data = fresh
@@ -347,47 +479,303 @@ struct ContentView: View {
     }
 }
 
-// MARK: - 天气背景
+// MARK: - 玻璃修饰器
 
-struct WeatherBackdrop: View {
-    let kind: WeatherKind
+struct GlassCard: ViewModifier {
+    let radius: CGFloat
 
-    var body: some View {
-        ZStack {
-            Palette.bg
-            Image(kind.imageName)
-                .resizable()
-                .scaledToFill()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
-                .overlay(
-                    LinearGradient(
-                        colors: [
-                            Color(hex: 0x03182D).opacity(0.10),
-                            Color(hex: 0x03182D).opacity(0.34),
-                            Color(hex: 0x02101F).opacity(0.80),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+        } else {
+            content
+                .background(
+                    .ultraThinMaterial,
+                    in: RoundedRectangle(cornerRadius: radius, style: .continuous)
                 )
                 .overlay(
-                    LinearGradient(
-                        colors: [Color(hex: 0xF5A623).opacity(0.10), .clear],
-                        startPoint: .topTrailing,
-                        endPoint: .center
-                    )
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
+                        .stroke(Color.white.opacity(0.14), lineWidth: 0.7)
                 )
-                .animation(.easeInOut(duration: 0.7), value: kind)
         }
     }
 }
 
-// MARK: - 全景卡（能流 + 浮标）
+struct GlassCircle: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular, in: Circle())
+        } else {
+            content
+                .background(.ultraThinMaterial, in: Circle())
+                .overlay(Circle().stroke(Color.white.opacity(0.16), lineWidth: 0.7))
+        }
+    }
+}
+
+// MARK: - 卡片按压
+
+struct CardPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.972 : 1)
+            .opacity(configuration.isPressed ? 0.9 : 1)
+            .animation(Design.press, value: configuration.isPressed)
+    }
+}
+
+// MARK: - 电池图形
+
+struct BatteryGlyph: View {
+    let soc: Double?
+    let charging: Bool
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            let h = geo.size.height
+            let level = min(max((soc ?? 0) / 100, 0), 1)
+
+            ZStack(alignment: .bottom) {
+                RoundedRectangle(cornerRadius: w * 0.32, style: .continuous)
+                    .fill(Color(hex: 0x041E30).opacity(0.86))
+
+                RoundedRectangle(cornerRadius: w * 0.26, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color(hex: 0x5DF2DC), Color(hex: 0x29C9DF), Color(hex: 0x168FD6)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(height: max(6, (h - 10) * level))
+                    .padding(.horizontal, 5)
+                    .padding(.bottom, 5)
+
+                Text(Fmt.percent(soc))
+                    .font(.system(size: w * 0.27, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .shadow(color: Color(hex: 0x00192F).opacity(0.55), radius: 3, y: 1)
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: w * 0.32, style: .continuous)
+                    .stroke(charging ? Color(hex: 0x7DEFEF) : Color(hex: 0x5FD6E6), lineWidth: 2)
+            )
+            .overlay(alignment: .top) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color(hex: 0x7DEFEF))
+                    .frame(width: w * 0.38, height: 6)
+                    .offset(y: -6)
+            }
+        }
+    }
+}
+
+// MARK: - 动态天气背景
+
+struct WeatherBackdrop: View {
+    let kind: WeatherKind
+
+    @State private var drift: CGFloat = -1
+    @State private var zoom: CGFloat = 1.04
+    @State private var sunPulse: CGFloat = 0.9
+    @State private var moonPulse: CGFloat = 0.86
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                Palette.bg
+
+                Image(kind.imageName)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .scaleEffect(zoom)
+                    .offset(x: drift * 10, y: drift * 5)
+                    .clipped()
+
+                if kind == .sunny { sunOrb(in: geo.size) }
+                if kind == .night {
+                    starField(in: geo.size)
+                    moonOrb(in: geo.size)
+                }
+                if kind == .rain { RainLayer().allowsHitTesting(false) }
+
+                Clouds(size: geo.size, kind: kind)
+
+                LinearGradient(
+                    colors: [
+                        Color(hex: 0x03182D).opacity(0.10),
+                        Color(hex: 0x03182D).opacity(0.32),
+                        Color(hex: 0x02101F).opacity(0.86),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+        }
+        .ignoresSafeArea()
+        .onAppear {
+            withAnimation(.easeInOut(duration: 13).repeatForever(autoreverses: true)) {
+                drift = 1
+                zoom = 1.115
+            }
+            withAnimation(.easeInOut(duration: 4.5).repeatForever(autoreverses: true)) {
+                sunPulse = 1.08
+            }
+            withAnimation(.easeInOut(duration: 5.5).repeatForever(autoreverses: true)) {
+                moonPulse = 1.0
+            }
+        }
+    }
+
+    private func sunOrb(in size: CGSize) -> some View {
+        Circle()
+            .fill(
+                RadialGradient(
+                    colors: [
+                        Color(hex: 0xFFF8CE).opacity(0.95),
+                        Color(hex: 0xFFE47B).opacity(0.55),
+                        Color(hex: 0xFFD248).opacity(0.18),
+                        .clear,
+                    ],
+                    center: .center,
+                    startRadius: 4,
+                    endRadius: 90
+                )
+            )
+            .frame(width: 180, height: 180)
+            .scaleEffect(sunPulse)
+            .position(x: size.width * 0.83, y: size.height * 0.10)
+            .blendMode(.screen)
+            .allowsHitTesting(false)
+    }
+
+    private func moonOrb(in size: CGSize) -> some View {
+        Circle()
+            .fill(
+                RadialGradient(
+                    colors: [.white, Color(hex: 0xE6F2FF), Color(hex: 0x9AC4EA).opacity(0.5), .clear],
+                    center: UnitPoint(x: 0.38, y: 0.34),
+                    startRadius: 2,
+                    endRadius: 60
+                )
+            )
+            .frame(width: 110, height: 110)
+            .scaleEffect(moonPulse)
+            .position(x: size.width * 0.80, y: size.height * 0.09)
+            .blendMode(.screen)
+            .allowsHitTesting(false)
+    }
+
+    private func starField(in size: CGSize) -> some View {
+        Canvas { ctx, canvas in
+            for i in 0..<44 {
+                let seedX = Double((i * 37) % 100) / 100
+                let seedY = Double((i * 61) % 58) / 100
+                let r = 0.7 + Double(i % 3) * 0.5
+                let rect = CGRect(x: seedX * canvas.width, y: seedY * canvas.height, width: r, height: r)
+                ctx.fill(Path(ellipseIn: rect), with: .color(.white.opacity(0.55)))
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+private struct Clouds: View {
+    let size: CGSize
+    let kind: WeatherKind
+
+    private var baseOpacity: Double {
+        switch kind {
+        case .sunny:  return 0.26
+        case .cloudy: return 0.72
+        case .rain:   return 0.42
+        case .night:  return 0.34
+        }
+    }
+
+    var body: some View {
+        ZStack {
+            DriftBlob(y: 0.06, widthRatio: 0.86, duration: 22, delay: 0, shift: 0.42, opacity: baseOpacity, dark: kind == .rain)
+            DriftBlob(y: 0.26, widthRatio: 0.70, duration: 28, delay: -6, shift: -0.38, opacity: baseOpacity, dark: kind == .rain)
+            DriftBlob(y: 0.52, widthRatio: 0.92, duration: 34, delay: -12, shift: 0.46, opacity: baseOpacity, dark: kind == .rain)
+        }
+        .frame(width: size.width, height: size.height)
+        .allowsHitTesting(false)
+    }
+}
+
+private struct DriftBlob: View {
+    let y: CGFloat
+    let widthRatio: CGFloat
+    let duration: Double
+    let delay: Double
+    let shift: CGFloat
+    let opacity: Double
+    let dark: Bool
+
+    @State private var x: CGFloat = 0
+
+    var body: some View {
+        GeometryReader { geo in
+            Ellipse()
+                .fill(
+                    RadialGradient(
+                        colors: dark
+                            ? [Color(hex: 0x738A9B).opacity(0.72), Color(hex: 0x274057).opacity(0.35), .clear]
+                            : [Color(hex: 0xFAFDFF).opacity(0.82), Color(hex: 0xCAE1EB).opacity(0.34), .clear],
+                        center: .center,
+                        startRadius: 8,
+                        endRadius: geo.size.width * widthRatio * 0.5
+                    )
+                )
+                .frame(width: geo.size.width * widthRatio, height: geo.size.height * 0.22)
+                .blur(radius: 26)
+                .opacity(opacity)
+                .offset(x: geo.size.width * (x - 0.42), y: geo.size.height * y)
+                .onAppear {
+                    withAnimation(
+                        .easeInOut(duration: duration)
+                        .repeatForever(autoreverses: true)
+                        .delay(delay)
+                    ) {
+                        x = shift + 0.42
+                    }
+                }
+        }
+    }
+}
+
+private struct RainLayer: View {
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+            Canvas { ctx, size in
+                let t = timeline.date.timeIntervalSinceReferenceDate
+                for i in 0..<64 {
+                    let seed = Double((i * 29) % 100) / 100.0
+                    let speed = 0.75 + Double(i % 5) * 0.16
+                    let phase = (t * speed + seed * 3.7).truncatingRemainder(dividingBy: 1.0)
+                    let x = seed * (size.width + 60) - 30
+                    let y = phase * (size.height + 120) - 60
+                    var p = Path()
+                    p.move(to: CGPoint(x: x, y: y))
+                    p.addLine(to: CGPoint(x: x - 5, y: y + 20))
+                    ctx.stroke(p, with: .color(Color(hex: 0xE3F4FF).opacity(0.42)), lineWidth: 0.9)
+                }
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+// MARK: - 全景卡
 
 struct LuminaHero: View {
     let data: SolarData
     @State private var dashPhase: CGFloat = 0
+    @State private var glowIn: CGFloat = 0
 
     private let boxW: CGFloat = 1617
     private let boxH: CGFloat = 971
@@ -403,41 +791,26 @@ struct LuminaHero: View {
                     .scaledToFill()
                     .frame(width: w, height: h)
                     .clipped()
+                    .opacity(0.98)
 
                 flows(w: w, h: h)
 
-                // 光伏 (left 7.4%, top 28.7%)
-                buoyPV
-                    .position(x: w * 0.074 + 44, y: h * 0.287 + 15)
-
-                // 住宅负载 (left 51.8%, top 19%)
-                buoyLoad
-                    .position(x: w * 0.518, y: h * 0.19 + 15)
-
-                // 电池 (left 24.2%, bottom 17.6%)
-                buoyBattery
-                    .position(x: w * 0.242 + 28, y: h * 0.824 - 15)
-
-                // 市电 (right 5.5%, top 30%)
-                buoyGrid
-                    .position(x: w * 0.945 - 22, y: h * 0.30 + 18)
+                buoyPV.position(x: w * 0.115, y: h * 0.315)
+                buoyLoad.position(x: w * 0.518, y: h * 0.215)
+                buoyBattery.position(x: w * 0.268, y: h * 0.790)
+                buoyGrid.position(x: w * 0.900, y: h * 0.330)
             }
+            .frame(width: w, height: h)
         }
         .aspectRatio(boxW / boxH, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: Design.cardRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Design.cardRadius, style: .continuous)
-                .stroke(Color.white.opacity(0.24), lineWidth: 0.8)
-        )
-        .shadow(color: Color(hex: 0x000F24).opacity(0.30), radius: 18, y: 10)
+        .modifier(GlassCard(radius: Design.rowRadius))
         .onAppear {
             withAnimation(.linear(duration: 3.4).repeatForever(autoreverses: false)) {
                 dashPhase = 220
             }
+            withAnimation(.easeOut(duration: 0.8)) { glowIn = 1 }
         }
     }
-
-    // MARK: 能流线
 
     private func flows(w: CGFloat, h: CGFloat) -> some View {
         ZStack {
@@ -452,18 +825,19 @@ struct LuminaHero: View {
             pulse(.grid, active: activeGrid, w: w, h: h)
 
             Circle()
-                .fill(Palette.cyan.opacity(0.85))
-                .frame(width: max(4, w * 0.011), height: max(4, w * 0.011))
-                .blur(radius: 2)
+                .fill(Palette.cyan.opacity(0.9))
+                .frame(width: max(4, w * 0.012), height: max(4, w * 0.012))
+                .blur(radius: 1.5)
                 .position(x: w * (1010 / boxW), y: h * (640 / boxH))
         }
         .allowsHitTesting(false)
+        .opacity(glowIn)
     }
 
     private func glow(_ route: FlowShape, active: Bool, w: CGFloat, h: CGFloat) -> some View {
         route.path(in: CGSize(width: w, height: h))
-            .stroke(Palette.cyan.opacity(active ? 0.30 : 0.05), lineWidth: 7)
-            .blur(radius: 5)
+            .stroke(Palette.cyan.opacity(active ? 0.32 : 0.10), lineWidth: max(5, w * 0.018))
+            .blur(radius: 4)
     }
 
     private func pulse(_ route: FlowShape, active: Bool, w: CGFloat, h: CGFloat) -> some View {
@@ -475,13 +849,13 @@ struct LuminaHero: View {
                     endPoint: .trailing
                 ),
                 style: StrokeStyle(
-                    lineWidth: max(1.4, w * 0.006),
+                    lineWidth: max(1.6, w * 0.007),
                     lineCap: .round,
-                    dash: [max(18, w * 0.16), max(26, w * 0.20)],
+                    dash: [max(20, w * 0.18), max(26, w * 0.20)],
                     dashPhase: dashPhase
                 )
             )
-            .opacity(active ? 0.95 : 0)
+            .opacity(active ? 0.95 : 0.30)
             .animation(.easeInOut(duration: 0.4), value: active)
     }
 
@@ -490,27 +864,21 @@ struct LuminaHero: View {
     private var activeBattery: Bool { abs(data.batteryPower ?? 0) > 20 }
     private var activeGrid: Bool { abs(data.grid ?? 0) > 20 }
 
-    // MARK: 浮标
-
     private var buoyText: CGFloat { 10 }
 
     private func buoy<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         content()
-            .padding(.horizontal, 6)
-            .padding(.vertical, 4)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 3)
             .background(
-                LinearGradient(
-                    colors: [Color(hex: 0x021424).opacity(0.86), Color(hex: 0x083448).opacity(0.70)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                Color(hex: 0x021424).opacity(0.82),
+                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .stroke(Color(hex: 0xE0FCFF).opacity(0.45), lineWidth: 0.6)
             )
-            .shadow(color: Color(hex: 0x19EEFF).opacity(0.45), radius: 5)
+            .shadow(color: Color(hex: 0x19EEFF).opacity(0.42), radius: 4)
             .foregroundStyle(Palette.cyan)
             .fixedSize()
     }
@@ -518,10 +886,8 @@ struct LuminaHero: View {
     private var buoyPV: some View {
         buoy {
             VStack(alignment: .leading, spacing: 1) {
-                Text("S1: \(Fmt.watt(data.pv1))")
-                    .font(.system(size: buoyText, weight: .heavy))
-                Text("S2: \(data.pv2 == nil ? "未接入" : Fmt.watt(data.pv2))")
-                    .font(.system(size: buoyText - 1, weight: .semibold))
+                Text("S1: \(Fmt.watt(data.pv1))").font(.system(size: buoyText, weight: .heavy))
+                Text("S2: 未接入").font(.system(size: buoyText - 1, weight: .semibold))
             }
             .italic()
         }
@@ -530,11 +896,8 @@ struct LuminaHero: View {
     private var buoyLoad: some View {
         buoy {
             VStack(spacing: 0) {
-                Text(Fmt.watt(data.load))
-                    .font(.system(size: buoyText + 1, weight: .heavy))
-                Text("住宅负载")
-                    .font(.system(size: buoyText - 1.5, weight: .semibold))
-                    .opacity(0.85)
+                Text(Fmt.watt(data.load)).font(.system(size: buoyText + 1, weight: .heavy))
+                Text("住宅负载").font(.system(size: buoyText - 1.5, weight: .semibold)).opacity(0.85)
             }
         }
     }
@@ -542,10 +905,8 @@ struct LuminaHero: View {
     private var buoyBattery: some View {
         buoy {
             VStack(spacing: 0) {
-                Text(Fmt.percent(data.soc))
-                    .font(.system(size: buoyText + 1, weight: .heavy))
-                Text(Fmt.watt(abs(data.batteryPower ?? 0)))
-                    .font(.system(size: buoyText - 1, weight: .semibold))
+                Text(Fmt.percent(data.soc)).font(.system(size: buoyText + 1, weight: .heavy))
+                Text(Fmt.watt(abs(data.batteryPower ?? 0))).font(.system(size: buoyText - 1, weight: .semibold))
             }
         }
     }
@@ -553,14 +914,9 @@ struct LuminaHero: View {
     private var buoyGrid: some View {
         buoy {
             VStack(alignment: .trailing, spacing: 0) {
-                Text("市电")
-                    .font(.system(size: buoyText - 2, weight: .semibold))
-                    .opacity(0.85)
-                Text(Fmt.watt(data.grid))
-                    .font(.system(size: buoyText, weight: .heavy))
-                Text(gridStateText)
-                    .font(.system(size: buoyText - 2, weight: .semibold))
-                    .opacity(0.85)
+                Text("市电").font(.system(size: buoyText - 2, weight: .semibold)).opacity(0.85)
+                Text(Fmt.watt(data.grid)).font(.system(size: buoyText, weight: .heavy))
+                Text(gridStateText).font(.system(size: buoyText - 2, weight: .semibold)).opacity(0.85)
             }
         }
     }
@@ -572,7 +928,7 @@ struct LuminaHero: View {
     }
 }
 
-// MARK: - 能流路径（与 HA 面板 SVG 同源，viewBox 1617×971）
+// MARK: - 能流路径（与 HA 面板 SVG 同源）
 
 enum FlowShape {
     case pv, load, battery, grid
@@ -609,36 +965,29 @@ struct ForecastBar: View {
     let data: SolarData
 
     var body: some View {
-        HStack(alignment: .center, spacing: 11) {
+        HStack(alignment: .center, spacing: 9) {
             Image(systemName: data.weather.symbol)
-                .font(.system(size: 20, weight: .regular))
-                .foregroundStyle(Palette.text.opacity(0.92))
-                .frame(width: 28)
+                .font(.system(size: 18, weight: .regular))
+                .foregroundStyle(Palette.text.opacity(0.9))
+                .frame(width: 24)
 
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    Text("今日预计")
-                        .foregroundStyle(Palette.dim)
-                    Text(Fmt.kwh(data.forecastToday))
-                        .foregroundStyle(Palette.text)
-                        .fontWeight(.semibold)
-                    Text("，剩余")
-                        .foregroundStyle(Palette.dim)
-                    Text(Fmt.kwh(data.forecastRemaining))
-                        .foregroundStyle(Palette.text)
-                        .fontWeight(.semibold)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 3) {
+                    Text("今日预计").foregroundStyle(Palette.dim)
+                    Text(Fmt.kwh(data.forecastToday)).foregroundStyle(Palette.text).fontWeight(.semibold)
+                    Text("，剩余").foregroundStyle(Palette.dim)
+                    Text(Fmt.kwh(data.forecastRemaining)).foregroundStyle(Palette.text).fontWeight(.semibold)
                 }
-                .font(.system(size: 12.5))
+                .font(.system(size: 12))
 
                 Text(secondLine)
-                    .font(.system(size: 11.5))
+                    .font(.system(size: 11))
                     .foregroundStyle(Palette.dim)
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 4)
-        .padding(.vertical, 2)
     }
 
     private var secondLine: String {
@@ -646,89 +995,11 @@ struct ForecastBar: View {
         if let t = data.forecastTomorrow {
             parts.append("明日预计 \(Fmt.kwh(t))")
         }
-        if let d = data.daily, let f = data.forecastToday, f > 1 {
+        if let d = data.dailyPv, let f = data.forecastToday, f > 1 {
             let pct = Int((min(d / f, 1) * 100).rounded())
             parts.append("已完成 \(pct)%")
         }
         return parts.joined(separator: " · ")
-    }
-}
-
-// MARK: - 指标卡
-
-struct MetricCard: View {
-    let icon: String
-    let tint: Color
-    let title: String
-    let value: String
-    let progress: Double?
-    let footnote: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(tint)
-                Text(title)
-                    .font(Design.label)
-                    .foregroundStyle(Palette.dim)
-                Spacer(minLength: 0)
-            }
-
-            Text(value)
-                .font(Design.cardValue)
-                .foregroundStyle(Palette.text)
-                .contentTransition(.numericText())
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-
-            if let progress {
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color.white.opacity(0.10))
-                        Capsule()
-                            .fill(
-                                LinearGradient(
-                                    colors: [tint.opacity(0.55), tint],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .frame(width: max(3, geo.size.width * progress))
-                    }
-                }
-                .frame(height: 3)
-                .animation(Design.snappy, value: progress)
-            }
-
-            if let footnote {
-                Text(footnote)
-                    .font(Design.caption)
-                    .foregroundStyle(Palette.dim)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 13)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Palette.card.opacity(0.62), in: RoundedRectangle(cornerRadius: Design.cardRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Design.cardRadius, style: .continuous)
-                .stroke(Color.white.opacity(0.10), lineWidth: 0.7)
-        )
-    }
-}
-
-// MARK: - 按压反馈
-
-struct PressableStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.972 : 1)
-            .opacity(configuration.isPressed ? 0.88 : 1)
-            .animation(Design.press, value: configuration.isPressed)
     }
 }
 
@@ -737,17 +1008,18 @@ struct PressableStyle: ButtonStyle {
 struct SettingsView: View {
     @Binding var haURL: String
     @Binding var haToken: String
+    var onSave: () -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Home Assistant 地址") {
-                    TextField("http://192.168.31.88:8123", text: $haURL)
+                    TextField("http://www.example.com:8123", text: $haURL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
-                    Text("外网用 IPv6 时必须写成 http://[地址]:8123，方括号不能省")
+                    Text("建议填 DDNS 域名；IPv6 直连要写成 http://[地址]:8123")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -756,15 +1028,18 @@ struct SettingsView: View {
                     SecureField("eyJ0eXAiOiJKV1Qi...", text: $haToken)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                    Text("HA → 左下角个人资料 → 安全 → 长期访问令牌 → 创建")
+                    Text("HA → 个人资料 → 安全 → 长期访问令牌 → 创建")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
 
                 Section {
-                    Button("完成") { dismiss() }
-                        .frame(maxWidth: .infinity)
-                        .fontWeight(.semibold)
+                    Button("保存并刷新") {
+                        onSave()
+                        dismiss()
+                    }
+                    .frame(maxWidth: .infinity)
+                    .fontWeight(.semibold)
                 }
             }
             .navigationTitle("设置")

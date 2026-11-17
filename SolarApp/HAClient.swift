@@ -1,31 +1,40 @@
 import Foundation
 
-// MARK: - 配置
+// MARK: - 实体配置
 
 enum SolarConfig {
     /// 示例地址；首次启动在 App 设置页填自己的 HA 地址
     static let defaultBaseURL = "http://192.168.1.100:8123"
     static let defaultPanelURL = "http://192.168.1.100:8123/solar-board/solar"
 
-    /// 一次模板请求取回全部数值，避免十几次 HTTP 往返
-    static let entities: [(String, String)] = [
-        ("pv1",        "sensor.guang_fu_ben_di_wang_guan_pv1_power"),
-        ("pv2",        "sensor.guang_fu_ben_di_wang_guan_pv2_power"),
-        ("load",       "sensor.guang_fu_ben_di_wang_guan_load_power"),
-        ("soc",        "sensor.guang_fu_ben_di_wang_guan_bms_soc"),
-        ("charge",     "sensor.guang_fu_ben_di_wang_guan_battery_charge_power"),
-        ("discharge",  "sensor.guang_fu_ben_di_wang_guan_battery_discharge_power"),
-        ("grid",       "sensor.guang_fu_ben_di_wang_guan_grid_power_raw"),
-        ("daily",      "sensor.guang_fu_ben_di_wang_guan_daily_pv_energy"),
-        ("total",      "sensor.guang_fu_ben_di_wang_guan_total_pv_energy"),
-        ("fcToday",    "sensor.solcast_pv_forecast_forecast_today"),
-        ("fcRemain",   "sensor.solcast_pv_forecast_forecast_remaining_today"),
-        ("fcTomorrow", "sensor.solcast_pv_forecast_forecast_tomorrow"),
-        ("weather",    "weather.forecast_wo_de_jia"),
+    static let prefix = "sensor.guang_fu_ben_di_wang_guan_"
+
+    /// 主界面一次取回（顺序即解析下标，勿随意调整）
+    static let mainEntities: [String] = [
+        prefix + "pv1_power",                          // 0
+        prefix + "pv1_voltage",                        // 1
+        prefix + "pv1_current",                        // 2
+        prefix + "pv_total_power",                     // 3
+        prefix + "load_power",                         // 4
+        prefix + "bms_soc",                            // 5
+        prefix + "battery_charge_power",               // 6
+        prefix + "battery_discharge_power",            // 7
+        prefix + "grid_power_raw",                     // 8
+        prefix + "daily_battery_charge_energy",        // 9
+        prefix + "daily_battery_discharge_energy",     // 10
+        prefix + "daily_pv_energy",                    // 11
+        prefix + "total_pv_energy",                    // 12
+        "sensor.solcast_pv_forecast_forecast_today",             // 13
+        "sensor.solcast_pv_forecast_forecast_remaining_today",   // 14
+        "sensor.solcast_pv_forecast_forecast_tomorrow",          // 15
+        "weather.forecast_wo_de_jia",                            // 16
+        prefix + "inverter_temperature",               // 17
+        prefix + "inverter_status_raw",                // 18
+        prefix + "inverter_warning_code_raw",          // 19
     ]
 
-    static var template: String {
-        entities.map { "{{ states('\($0.1)') }}" }.joined(separator: "|")
+    static func template(_ ids: [String]) -> String {
+        ids.map { "{{ states('\($0)') }}" }.joined(separator: "|")
     }
 }
 
@@ -37,6 +46,8 @@ enum HAError: LocalizedError {
     case unauthorized
     case http(Int)
     case badBody
+    case emptyResponse
+    case unexpectedBody(String)
 
     var errorDescription: String? {
         switch self {
@@ -45,6 +56,8 @@ enum HAError: LocalizedError {
         case .unauthorized:  return "令牌无效或已过期（401）"
         case .http(let c):   return "HA 返回 HTTP \(c)"
         case .badBody:       return "返回内容无法解析"
+        case .emptyResponse: return "HA 返回了空内容，检查地址是否正确"
+        case .unexpectedBody(let s): return "返回内容异常：\(s)"
         }
     }
 }
@@ -52,10 +65,7 @@ enum HAError: LocalizedError {
 // MARK: - 天气
 
 enum WeatherKind: String {
-    case sunny
-    case cloudy
-    case rain
-    case night
+    case sunny, cloudy, rain, night
 
     var imageName: String {
         switch self {
@@ -84,11 +94,10 @@ enum WeatherKind: String {
         }
     }
 
-    /// HA 天气实体 state → 视觉分类
     static func from(_ raw: String) -> WeatherKind {
         let s = raw.lowercased()
         if s.contains("night") {
-            return s.contains("rain") || s.contains("pouring") || s.contains("lightning") ? .rain : .night
+            return (s.contains("rain") || s.contains("pouring") || s.contains("lightning")) ? .rain : .night
         }
         if s.contains("rain") || s.contains("pouring") || s.contains("lightning") || s.contains("snow") {
             return .rain
@@ -96,29 +105,144 @@ enum WeatherKind: String {
         if s.contains("sunny") || s.contains("clear") {
             return .sunny
         }
-        if s.contains("cloud") || s.contains("fog") || s.contains("wind") || s.contains("hail") {
-            return .cloudy
-        }
         return .cloudy
     }
 }
 
-// MARK: - 数据
+// MARK: - 设备类型
+
+enum DeviceKind: String, CaseIterable, Identifiable, Hashable {
+    case pv1, inverter, battery, grid, load
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .pv1:      return "PV1"
+        case .inverter: return "逆变器"
+        case .battery:  return "储能电池"
+        case .grid:     return "市电"
+        case .load:     return "住宅负载"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .pv1:      return "sun.max.fill"
+        case .inverter: return "bolt.horizontal.circle.fill"
+        case .battery:  return "battery.75percent"
+        case .grid:     return "powerplug.fill"
+        case .load:     return "house.fill"
+        }
+    }
+
+    var kicker: String {
+        switch self {
+        case .pv1:      return "PV ARRAY · LIVE"
+        case .inverter: return "INVERTER · LIVE"
+        case .battery:  return "ENERGY STORAGE · LIVE"
+        case .grid:     return "GRID · LIVE"
+        case .load:     return "HOME LOAD · LIVE"
+        }
+    }
+
+    var desc: String {
+        switch self {
+        case .pv1:      return "光伏组串实时输出与发电累计"
+        case .inverter: return "逆变器输出、温度与运行状态"
+        case .battery:  return "实时运行与电池管理状态"
+        case .grid:     return "市电功率与流向"
+        case .load:     return "住宅当前用电与累计用电"
+        }
+    }
+
+    struct Field {
+        let label: String
+        let entity: String
+        let unit: String
+        let digits: Int
+    }
+
+    var fields: [Field] {
+        let p = SolarConfig.prefix
+        switch self {
+        case .pv1:
+            return [
+                .init(label: "实时功率", entity: p + "pv1_power", unit: "W", digits: 0),
+                .init(label: "电压", entity: p + "pv1_voltage", unit: "V", digits: 1),
+                .init(label: "电流", entity: p + "pv1_current", unit: "A", digits: 2),
+                .init(label: "今日发电", entity: p + "daily_pv_energy", unit: "kWh", digits: 2),
+                .init(label: "累计发电", entity: p + "total_pv_energy", unit: "kWh", digits: 1),
+            ]
+        case .inverter:
+            return [
+                .init(label: "输出功率", entity: p + "pv_total_power", unit: "W", digits: 0),
+                .init(label: "温度", entity: p + "inverter_temperature", unit: "°C", digits: 1),
+                .init(label: "Bus1 电压", entity: p + "bus1_voltage", unit: "V", digits: 1),
+                .init(label: "运行状态", entity: p + "inverter_status_raw", unit: "", digits: 0),
+                .init(label: "告警码", entity: p + "inverter_warning_code_raw", unit: "", digits: 0),
+                .init(label: "累计运行", entity: p + "inverter_runtime_raw", unit: "h", digits: 0),
+            ]
+        case .battery:
+            return [
+                .init(label: "SOC", entity: p + "bms_soc", unit: "%", digits: 0),
+                .init(label: "电压", entity: p + "battery_voltage", unit: "V", digits: 2),
+                .init(label: "电流", entity: p + "battery_current", unit: "A", digits: 2),
+                .init(label: "温度", entity: p + "battery_temperature", unit: "°C", digits: 1),
+                .init(label: "充电功率", entity: p + "battery_charge_power", unit: "W", digits: 0),
+                .init(label: "放电功率", entity: p + "battery_discharge_power", unit: "W", digits: 0),
+                .init(label: "剩余容量", entity: p + "bms_remaining_capacity", unit: "Ah", digits: 1),
+                .init(label: "额定容量", entity: p + "bms_nominal_capacity", unit: "Ah", digits: 0),
+                .init(label: "循环次数", entity: p + "bms_cycle_count", unit: "次", digits: 0),
+                .init(label: "最高单体", entity: p + "bms_max_cell_voltage", unit: "V", digits: 3),
+                .init(label: "最低单体", entity: p + "bms_min_cell_voltage", unit: "V", digits: 3),
+                .init(label: "单体压差", entity: p + "bms_cell_delta", unit: "V", digits: 3),
+            ]
+        case .grid:
+            return [
+                .init(label: "实时功率", entity: p + "grid_power_raw", unit: "W", digits: 0),
+            ]
+        case .load:
+            return [
+                .init(label: "实时功率", entity: p + "load_power", unit: "W", digits: 0),
+                .init(label: "今日用电", entity: p + "daily_load_energy", unit: "kWh", digits: 2),
+                .init(label: "累计用电", entity: p + "total_load_energy", unit: "kWh", digits: 1),
+            ]
+        }
+    }
+
+    var cellEntities: [String] {
+        guard self == .battery else { return [] }
+        return (1...16).map {
+            String(format: "sensor.guang_fu_ben_di_wang_guan_bms_cell_voltage_%02d", $0)
+        }
+    }
+}
+
+// MARK: - 主数据
 
 struct SolarData: Equatable {
-    var pv1: Double?          // W
-    var pv2: Double?          // W（未接入时为 nil）
-    var load: Double?         // W
-    var soc: Double?          // %
-    var charge: Double?       // W
-    var discharge: Double?    // W
-    var grid: Double?         // W
-    var daily: Double?        // kWh
-    var total: Double?        // kWh
+    var pv1: Double?
+    var pv1Voltage: Double?
+    var pv1Current: Double?
+    var pvTotal: Double?
+    var load: Double?
+    var soc: Double?
+    var charge: Double?
+    var discharge: Double?
+    var grid: Double?
+    var dailyCharge: Double?
+    var dailyDischarge: Double?
+    var dailyPv: Double?
+    var totalPv: Double?
     var forecastToday: Double?
     var forecastRemaining: Double?
     var forecastTomorrow: Double?
     var weatherRaw: String
+    var inverterTemp: Double?
+    var inverterStatus: String
+    var warningCode: String
+    var rawPreview: String
     var updatedAt: Date
 
     var weather: WeatherKind { WeatherKind.from(weatherRaw) }
@@ -129,12 +253,12 @@ struct SolarData: Equatable {
         return (charge ?? 0) - (discharge ?? 0)
     }
 
-    var isBatteryCharging: Bool { (batteryPower ?? 0) > 20 }
-    var isBatteryDischarging: Bool { (batteryPower ?? 0) < -20 }
+    var isEmptyReading: Bool {
+        pv1 == nil && load == nil && soc == nil && dailyPv == nil && forecastToday == nil
+    }
 
-    /// 今日预测完成度 0...1
     var forecastProgress: Double? {
-        guard let f = forecastToday, f > 1, let d = daily else { return nil }
+        guard let f = forecastToday, f > 1, let d = dailyPv else { return nil }
         return min(max(d / f, 0), 1)
     }
 
@@ -155,30 +279,55 @@ struct SolarData: Equatable {
             return (raw == "unknown" || raw == "unavailable") ? "" : raw
         }
 
+        let preview = text.count > 120 ? String(text.prefix(120)) + "…" : text
+
         return SolarData(
             pv1: num(0),
-            pv2: num(1),
-            load: num(2),
-            soc: num(3),
-            charge: num(4),
-            discharge: num(5),
-            grid: num(6),
-            daily: num(7),
-            total: num(8),
-            forecastToday: num(9),
-            forecastRemaining: num(10),
-            forecastTomorrow: num(11),
-            weatherRaw: str(12),
+            pv1Voltage: num(1),
+            pv1Current: num(2),
+            pvTotal: num(3),
+            load: num(4),
+            soc: num(5),
+            charge: num(6),
+            discharge: num(7),
+            grid: num(8),
+            dailyCharge: num(9),
+            dailyDischarge: num(10),
+            dailyPv: num(11),
+            totalPv: num(12),
+            forecastToday: num(13),
+            forecastRemaining: num(14),
+            forecastTomorrow: num(15),
+            weatherRaw: str(16),
+            inverterTemp: num(17),
+            inverterStatus: str(18),
+            warningCode: str(19),
+            rawPreview: preview,
             updatedAt: Date()
         )
     }
 
     static let empty = SolarData(
-        pv1: nil, pv2: nil, load: nil, soc: nil, charge: nil, discharge: nil,
-        grid: nil, daily: nil, total: nil, forecastToday: nil,
-        forecastRemaining: nil, forecastTomorrow: nil, weatherRaw: "",
-        updatedAt: Date(timeIntervalSince1970: 0)
+        pv1: nil, pv1Voltage: nil, pv1Current: nil, pvTotal: nil, load: nil,
+        soc: nil, charge: nil, discharge: nil, grid: nil,
+        dailyCharge: nil, dailyDischarge: nil, dailyPv: nil, totalPv: nil,
+        forecastToday: nil, forecastRemaining: nil, forecastTomorrow: nil,
+        weatherRaw: "", inverterTemp: nil, inverterStatus: "", warningCode: "",
+        rawPreview: "", updatedAt: Date(timeIntervalSince1970: 0)
     )
+}
+
+// MARK: - 详情数据
+
+struct DeviceDetail: Equatable {
+    var fields: [(String, String)] = []
+    var cells: [Double] = []
+    var note: String?
+
+    static func == (lhs: DeviceDetail, rhs: DeviceDetail) -> Bool {
+        lhs.fields.map { $0.0 + $0.1 } == rhs.fields.map { $0.0 + $0.1 }
+            && lhs.cells == rhs.cells
+    }
 }
 
 // MARK: - 客户端
@@ -187,25 +336,34 @@ struct HAClient {
     let baseURL: String
     let token: String
 
-    func fetchSolar() async throws -> SolarData {
-        guard !baseURL.isEmpty, !token.isEmpty else { throw HAError.notConfigured }
+    static func normalize(_ raw: String) -> String {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return "" }
+        if !s.lowercased().hasPrefix("http://") && !s.lowercased().hasPrefix("https://") {
+            s = "http://" + s
+        }
+        while s.hasSuffix("/") { s.removeLast() }
+        return s
+    }
 
-        let trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: trimmed + "/api/template") else { throw HAError.badURL }
+    private func postTemplate(_ ids: [String]) async throws -> String {
+        guard !baseURL.isEmpty, !token.isEmpty else { throw HAError.notConfigured }
+        let base = HAClient.normalize(baseURL)
+        guard !base.isEmpty, let url = URL(string: base + "/api/template") else { throw HAError.badURL }
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
-        req.timeoutInterval = 12
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.timeoutInterval = 15
+        req.setValue("Bearer \(token.trimmingCharacters(in: .whitespacesAndNewlines))",
+                     forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject: ["template": SolarConfig.template])
+        req.httpBody = try JSONSerialization.data(withJSONObject: ["template": SolarConfig.template(ids)])
 
         let (data, response) = try await URLSession.shared.data(for: req)
         guard let http = response as? HTTPURLResponse else { throw HAError.badBody }
         if http.statusCode == 401 { throw HAError.unauthorized }
         guard (200..<300).contains(http.statusCode) else { throw HAError.http(http.statusCode) }
 
-        // /api/template 返回 JSON 字符串；个别版本返回裸文本，两种都接受
         let text: String
         if let decoded = try? JSONDecoder().decode(String.self, from: data) {
             text = decoded
@@ -214,6 +372,54 @@ struct HAClient {
         } else {
             throw HAError.badBody
         }
-        return SolarData.parse(text)
+
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { throw HAError.emptyResponse }
+        return trimmed
+    }
+
+    func fetchSolar() async throws -> SolarData {
+        let text = try await postTemplate(SolarConfig.mainEntities)
+        let parsed = SolarData.parse(text)
+        if parsed.isEmptyReading {
+            throw HAError.unexpectedBody(String(text.prefix(100)))
+        }
+        return parsed
+    }
+
+    func fetchDetail(_ kind: DeviceKind) async throws -> DeviceDetail {
+        let ids = kind.fields.map(\.entity) + kind.cellEntities
+        let text = try await postTemplate(ids)
+        let parts = text
+            .split(separator: "|", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+        func rawValue(_ i: Int) -> String {
+            guard i < parts.count else { return "" }
+            let v = parts[i]
+            return (v == "unknown" || v == "unavailable" || v == "None") ? "" : v
+        }
+        func display(_ raw: String, unit: String, digits: Int) -> String {
+            guard let d = Double(raw) else { return raw.isEmpty ? "--" : raw }
+            let number = String(format: "%.\(digits)f", d)
+            return unit.isEmpty ? number : number + " " + unit
+        }
+
+        var fields: [(String, String)] = []
+        for (i, f) in kind.fields.enumerated() {
+            fields.append((f.label, display(rawValue(i), unit: f.unit, digits: f.digits)))
+        }
+
+        var cells: [Double] = []
+        let start = kind.fields.count
+        for i in start..<(start + kind.cellEntities.count) where i < parts.count {
+            if let d = Double(parts[i]) { cells.append(d) }
+        }
+
+        let note = kind == .battery
+            ? "折算剩余电量 = BMS 实时总压 × BMS 剩余 Ah ÷ 1000，是参考值，不等同实验室可释放电量。"
+            : nil
+
+        return DeviceDetail(fields: fields, cells: cells, note: note)
     }
 }
