@@ -19,6 +19,7 @@ enum Design {
     static let rowRadius: CGFloat = 28
     static let cardRadius: CGFloat = 22
     static let iconRadius: CGFloat = 10
+    static let chipRadius: CGFloat = 12
     static let controlRadius: CGFloat = 14
 
     static let gap: CGFloat = 9

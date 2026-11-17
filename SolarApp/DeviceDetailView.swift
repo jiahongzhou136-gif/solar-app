@@ -327,12 +327,24 @@ enum AnyViewModifier {
 struct CellChip: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
-            content.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            content
+                .glassEffect(
+                    .clear.tint(Color.white.opacity(0.05)),
+                    in: RoundedRectangle(cornerRadius: Design.chipRadius, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Design.chipRadius, style: .continuous)
+                        .stroke(Color.white.opacity(0.10), lineWidth: 0.6)
+                )
         } else {
             content
                 .background(
                     Color.white.opacity(0.07),
-                    in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    in: RoundedRectangle(cornerRadius: Design.chipRadius, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Design.chipRadius, style: .continuous)
+                        .stroke(Color.white.opacity(0.10), lineWidth: 0.6)
                 )
         }
     }
