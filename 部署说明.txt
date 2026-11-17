@@ -187,3 +187,24 @@ A: 改 ContentView.swift 里的 Theme 配色和卡片布局，重新推送即可
 
 加载态
   · 首次加载用 .redacted(reason: .placeholder) 骨架屏，而不是转圈
+
+================================================================
+十一、CI 编译踩过的坑（2026-11-17 实测，已全部修复）
+================================================================
+
+1) runs-on 必须写 macos-latest
+   macos-14 这个标签已不可用：job 会在 2 秒内变 cancelled，且 runner 为空，
+   看起来像账户被限制，其实只是标签失效。改用 macos-latest 立即正常。
+
+2) 私有仓库拿不到 macOS runner
+   私有状态下同样 cancelled + runner=-，转公开后同一份 workflow 直接成功。
+   本项目代码里没有任何密钥（地址和令牌都在 App 内填），公开是安全的。
+   ⚠ 转公开前务必确认仓库里没有真实 IP / IPv6 / 密码。
+
+3) Assets.xcassets 必须有 AppIcon.appiconset
+   缺失时报错：
+     None of the input catalogs contained a matching ... named "AppIcon"
+   Xcode 26 已把这条从警告升级为构建失败。本包已附带 1024×1024 图标。
+
+4) 拉取 Actions 日志/产物时，302 跳转后的签名 URL 不能带 Authorization
+   带了会返回 Azure 的 InvalidAuthenticationInfo。
