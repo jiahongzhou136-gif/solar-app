@@ -233,7 +233,7 @@ struct DeviceDetailView: View {
     private func loadLoop() async {
         await load()
         while !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 5 * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: 1 * 1_000_000_000)
             if Task.isCancelled { break }
             await load()
         }

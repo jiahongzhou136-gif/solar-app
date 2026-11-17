@@ -248,8 +248,9 @@ struct ContentView: View {
 
     private var statusLine: String {
         if let e = errorText { return e }
-        if isLoading { return "正在读取…" }
-        if data.isEmptyReading { return "暂无数据，下拉刷新" }
+        if data.isEmptyReading {
+            return isLoading ? "正在读取…" : "暂无数据，下拉刷新"
+        }
         return "更新于 \(Fmt.clock(data.updatedAt))"
     }
 
@@ -465,12 +466,13 @@ struct ContentView: View {
 
     // MARK: 取数
 
-    /// 每 5 秒轮询一次；视图消失时 Task 会被自动取消
+    /// 与 HA 数据源同频：逆变器 Modbus 1 秒一采，BMS 蓝牙 5 秒一采。
+    /// 视图消失时 Task 自动取消。
     @MainActor
     private func refreshLoop() async {
         await refresh()
         while !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 5 * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: 1 * 1_000_000_000)
             if Task.isCancelled { break }
             await refresh()
         }
