@@ -1,0 +1,18 @@
+# macOS / Xcode
+.DS_Store
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# 生成物
+*.ipa
+Payload/
+SolarApp.xcodeproj/
+
+# 本地覆盖
+*.local.xcconfig
+
+# 含真实网络地址，只留本地
+部署说明.txt

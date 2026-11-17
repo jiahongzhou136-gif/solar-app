@@ -1,0 +1,9 @@
+# 全仓库统一 LF：CI 里 run: | 的 shell 命令不能带 \r
+* text=auto eol=lf
+
+# 二进制：不做换行转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.zip binary
+*.ipa binary

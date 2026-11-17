@@ -1,0 +1,34 @@
+name: SolarApp
+options:
+  bundleIdPrefix: com.zhoujh.solar
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGNING_REQUIRED: "NO"
+    CODE_SIGNING_ALLOWED: "NO"
+
+targets:
+  SolarApp:
+    type: application
+    platform: iOS
+    sources:
+      - path: SolarApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.zhoujh.solar.app
+        INFOPLIST_FILE: SolarApp/Info.plist
+        PRODUCT_NAME: SolarApp
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: "NO"
+        ENABLE_BITCODE: "NO"
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    scheme:
+      testTargets: []
+      gatherCoverageData: false
