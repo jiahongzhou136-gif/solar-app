@@ -351,18 +351,21 @@ struct HAClient {
         let base = HAClient.normalize(baseURL)
         guard !base.isEmpty, let url = URL(string: base + "/api/template") else { throw HAError.badURL }
 
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.timeoutInterval = 15
-        req.setValue("Bearer \(token.trimmingCharacters(in: .whitespacesAndNewlines))",
-                     forHTTPHeaderField: "Authorization")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject: ["template": SolarConfig.template(ids)])
+        let body = try JSONSerialization.data(
+            withJSONObject: ["template": SolarConfig.template(ids)]
+        )
+        let headers = [
+            "Authorization": "Bearer \(token.trimmingCharacters(in: .whitespacesAndNewlines))",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "SolarApp/1.0",
+        ]
 
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse else { throw HAError.badBody }
-        if http.statusCode == 401 { throw HAError.unauthorized }
-        guard (200..<300).contains(http.statusCode) else { throw HAError.http(http.statusCode) }
+        // 走 Network.framework，避开 ATS 对明文 HTTP 的拦截
+        let (status, data) = try await RawHTTP.post(url: url, headers: headers, body: body)
+
+        if status == 401 { throw HAError.unauthorized }
+        guard (200..<300).contains(status) else { throw HAError.http(status) }
 
         let text: String
         if let decoded = try? JSONDecoder().decode(String.self, from: data) {
