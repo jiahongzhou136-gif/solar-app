@@ -6,12 +6,14 @@ import Network
 // MARK: - Widget 数据
 
 struct WidgetData {
-    var pv: Double?
-    var load: Double?
-    var soc: Double?
-    var daily: Double?
-    var charge: Double?
-    var discharge: Double?
+    var pv: Double?          // 实时发电
+    var daily: Double?       // 今日发电
+    var load: Double?        // 当前负载
+    var soc: Double?         // 电池 SOC
+    var charge: Double?      // 充电功率
+    var discharge: Double?   // 放电功率
+    var dailyCharge: Double? // 今日充电
+    var grid: Double?        // 市电功率
     var updated: Date = Date()
 
     static let empty = WidgetData()
@@ -118,6 +120,8 @@ struct SolarTimeline: TimelineProvider {
             "daily": "sensor.guang_fu_ben_di_wang_guan_daily_pv_energy",
             "charge": "sensor.guang_fu_ben_di_wang_guan_battery_charge_power",
             "discharge": "sensor.guang_fu_ben_di_wang_guan_battery_discharge_power",
+            "dailyCharge": "sensor.guang_fu_ben_di_wang_guan_daily_battery_charge_energy",
+            "grid": "sensor.guang_fu_ben_di_wang_guan_grid_power_raw",
         ]
         var d = WidgetData.empty
         for (key, id) in ids {
@@ -132,6 +136,8 @@ struct SolarTimeline: TimelineProvider {
             case "daily": d.daily = (0...1_000_000).contains(v) ? v : nil
             case "charge": d.charge = abs(v) <= 30000 ? v : nil
             case "discharge": d.discharge = abs(v) <= 30000 ? v : nil
+            case "dailyCharge": d.dailyCharge = (0...1_000_000).contains(v) ? v : nil
+            case "grid": d.grid = abs(v) <= 30000 ? v : nil
             default: break
             }
         }
@@ -149,19 +155,10 @@ struct SolarEntry: TimelineEntry {
 
 struct SolarWidgetEntryView: View {
     var entry: SolarTimeline.Entry
-    @Environment(\.widgetFamily) var family
 
     var body: some View {
         Group {
-            if !entry.configured {
-                needSetup
-            } else {
-                switch family {
-                case .systemSmall: smallView
-                case .systemMedium: mediumView
-                default: largeView
-                }
-            }
+            if !entry.configured { needSetup } else { gridView }
         }
         .containerBackground(for: .widget) {
             LinearGradient(
@@ -169,13 +166,6 @@ struct SolarWidgetEntryView: View {
                 startPoint: .topLeading, endPoint: .bottomTrailing
             )
         }
-    }
-
-    private var batteryText: String {
-        guard let c = entry.data.charge, let d = entry.data.discharge else { return "--" }
-        if c > 0 && d <= 0 { return "充电 \(Fmt.number(c)) W" }
-        if d > 0 && c <= 0 { return "放电 \(Fmt.number(d)) W" }
-        return "待机"
     }
 
     private var needSetup: some View {
@@ -191,97 +181,41 @@ struct SolarWidgetEntryView: View {
         .padding(10)
     }
 
-    private var smallView: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 5) {
-                Circle().fill(WColor.cyan).frame(width: 6, height: 6)
-                Text("实时发电").font(.system(size: 11, weight: .medium)).foregroundStyle(WColor.label)
+    /// 唯一的布局：2 行 × 4 列，8 个核心指标。每格标签在上、数值在下。
+    private var gridView: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                cell("实时发电", Fmt.number(entry.data.pv) + " W", accent: true)
+                cell("今日发电", Fmt.kwh(entry.data.daily))
+                cell("当前负载", Fmt.watt(entry.data.load))
+                cell("电池 SOC", Fmt.percent(entry.data.soc))
             }
-            Spacer(minLength: 4)
-            HStack(alignment: .lastTextBaseline, spacing: 3) {
-                Text(Fmt.number(entry.data.pv)).font(.system(size: 34, weight: .semibold, design: .rounded))
-                    .foregroundStyle(WColor.text).minimumScaleFactor(0.7)
-                Text("W").font(.system(size: 13, weight: .medium)).foregroundStyle(WColor.label)
-            }
-            Spacer(minLength: 3)
-            HStack(spacing: 4) {
-                Text("今日").font(.system(size: 11)).foregroundStyle(WColor.label)
-                Text(Fmt.kwh(entry.data.daily)).font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(WColor.value)
+            HStack(spacing: 0) {
+                cell("充电功率", Fmt.watt(entry.data.charge))
+                cell("放电功率", Fmt.watt(entry.data.discharge))
+                cell("今日充电", Fmt.kwh(entry.data.dailyCharge))
+                cell("市电功率", Fmt.watt(entry.data.grid))
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var mediumView: some View {
-        HStack(spacing: 0) {
-            // 左侧：核心指标聚焦
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 5) {
-                    Circle().fill(WColor.cyan).frame(width: 6, height: 6)
-                    Text("实时发电").font(.system(size: 12, weight: .medium)).foregroundStyle(WColor.label)
-                }
-                Spacer(minLength: 2)
-                HStack(alignment: .lastTextBaseline, spacing: 3) {
-                    Text(Fmt.number(entry.data.pv)).font(.system(size: 40, weight: .semibold, design: .rounded))
-                        .foregroundStyle(WColor.text).minimumScaleFactor(0.65)
-                    Text("W").font(.system(size: 14, weight: .medium)).foregroundStyle(WColor.label)
-                }
-                Spacer(minLength: 0)
-            }
-            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-
-            Rectangle().fill(WColor.divider).frame(width: 1)
-                .padding(.vertical, 10)
-
-            // 右侧：次要信息竖排
-            VStack(alignment: .leading, spacing: 0) {
-                sideLine("今日发电", Fmt.kwh(entry.data.daily))
-                sideLine("电池 SOC", Fmt.percent(entry.data.soc))
-                sideLine("当前负载", Fmt.watt(entry.data.load))
-            }
-            .frame(width: 128, alignment: .leading)
+    private func cell(_ label: String, _ value: String, accent: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(WColor.label)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Text(value)
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundStyle(accent ? WColor.cyan : WColor.value)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
         }
-    }
-
-    private var largeView: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 6) {
-                Circle().fill(WColor.cyan).frame(width: 7, height: 7)
-                Text("光伏监控").font(.system(size: 14, weight: .semibold)).foregroundStyle(WColor.text)
-                Spacer()
-            }
-            HStack(alignment: .lastTextBaseline, spacing: 4) {
-                Text(Fmt.number(entry.data.pv)).font(.system(size: 46, weight: .semibold, design: .rounded))
-                    .foregroundStyle(WColor.text).minimumScaleFactor(0.6)
-                Text("W").font(.system(size: 15, weight: .medium)).foregroundStyle(WColor.label)
-            }
-            VStack(spacing: 8) {
-                HStack(spacing: 10) { metric("今日发电", Fmt.kwh(entry.data.daily)); metric("电池 SOC", Fmt.percent(entry.data.soc)) }
-                HStack(spacing: 10) { metric("当前负载", Fmt.watt(entry.data.load)); metric("电池状态", batteryText) }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func sideLine(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(label).font(.system(size: 11)).foregroundStyle(WColor.label)
-            Text(value).font(.system(size: 15, weight: .semibold, design: .rounded)).foregroundStyle(WColor.value)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func metric(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.system(size: 11)).foregroundStyle(WColor.label)
-            Text(value).font(.system(size: 16, weight: .semibold, design: .rounded)).foregroundStyle(WColor.value)
-                .minimumScaleFactor(0.75)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 8)
-        .padding(.horizontal, 10)
-        .background(WColor.tile, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
     }
 }
 
@@ -292,8 +226,6 @@ private enum WColor {
     static let value = Color(hex: 0xE4EFF8)
     static let label = Color(hex: 0xCFDEEB)
     static let cyan = Color(hex: 0x41F4FF)
-    static let divider = Color.white.opacity(0.16)
-    static let tile = Color.white.opacity(0.07)
 }
 
 // MARK: - Format (与 App 内一致，避免跨 target 耦合)
@@ -341,7 +273,7 @@ struct SolarWidget: Widget {
             SolarWidgetEntryView(entry: entry)
         }
         .configurationDisplayName("光伏监控")
-        .description("实时功率、今日发电与电池状态")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        .description("实时发电、今日发电与电池状态")
+        .supportedFamilies([.systemMedium])
     }
 }
