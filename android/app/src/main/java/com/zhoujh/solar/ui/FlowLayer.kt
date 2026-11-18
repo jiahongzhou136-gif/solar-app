@@ -54,8 +54,6 @@ object FlowPaths {
     }
 }
 
-val Cyan = Color(0xFF41F4FF)
-
 /** 能流绘制：底光常显；active 线路推进相位。正向 = -phase（对齐 HA Forward 0→-1000） */
 @Composable
 fun FlowLayer(

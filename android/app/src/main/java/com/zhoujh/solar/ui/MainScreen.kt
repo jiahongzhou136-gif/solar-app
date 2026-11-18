@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -31,11 +32,6 @@ import com.zhoujh.solar.data.*
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.floor
-
-private val TextMain = Color(0xFFF7FBFF)
-private val TextMuted = Color(0xFFB7CFDF)
-private val CardTop = Color(0x75477594)
-private val CardBot = Color(0x570A3150)
 
 fun fmtW(v: Double?): String = if (v == null) "--" else "${floor(v).toInt()} W"
 fun fmtKwh(v: Double?, digits: Int = 2): String =

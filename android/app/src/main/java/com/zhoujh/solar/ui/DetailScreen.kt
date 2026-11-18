@@ -1,5 +1,6 @@
 package com.zhoujh.solar.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -16,9 +17,6 @@ import com.zhoujh.solar.data.DeviceKind
 import com.zhoujh.solar.data.HAClient
 import com.zhoujh.solar.data.HAException
 import kotlinx.coroutines.delay
-
-private val TextMain = Color(0xFFF7FBFF)
-private val TextMuted = Color(0xFFB7CFDF)
 
 @Composable
 fun DetailScreen(kind: DeviceKind, config: Config, onBack: () -> Unit) {

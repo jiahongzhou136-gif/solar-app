@@ -47,7 +47,7 @@ class HAClient(private val cfg: Config) {
         return b.trimEnd('/')
     }
 
-    private fun post(url: String, body: String): String = withContext(Dispatchers.IO) {
+    private suspend fun post(url: String, body: String): String = withContext(Dispatchers.IO) {
         val req = Request.Builder()
             .url(url)
             .addHeader("Authorization", "Bearer ${cfg.token.trim()}")
