@@ -33,7 +33,6 @@ targets:
         ENABLE_BITCODE: "NO"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
-        CODE_SIGN_ENTITLEMENTS: SolarApp/SolarApp.entitlements
     scheme:
       testTargets: []
       gatherCoverageData: false
@@ -54,5 +53,4 @@ targets:
         INFOPLIST_FILE: SolarWidget/Info.plist
         TARGETED_DEVICE_FAMILY: "1"
         SKIP_INSTALL: "NO"
-        CODE_SIGN_ENTITLEMENTS: SolarWidget/SolarWidget.entitlements
     scheme: {}

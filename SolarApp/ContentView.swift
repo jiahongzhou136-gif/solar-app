@@ -263,6 +263,8 @@ struct ContentView: View {
                     .minimumScaleFactor(0.8)
                     .padding(.top, 2)
             }
+            // 通透玻璃下靠文字投影保证浅色天气背景上的可读性
+            .shadow(color: Color.black.opacity(0.5), radius: 2, x: 0, y: 1)
             .padding(.horizontal, 14)
             .padding(.vertical, 13)
             .frame(maxWidth: .infinity, minHeight: 132, alignment: .leading)
@@ -290,9 +292,12 @@ struct ContentView: View {
             // 与面板 _inverterPowerKey() 一致：现场无 inverter_output_power 时退回 load_power
             return (Fmt.watt(data.load ?? data.pvTotal ?? data.pv1), temp)
         case .battery:
-            let p = data.batteryPower ?? 0
-            let text = p > 20 ? "充电 \(Fmt.watt(p))" : (p < -20 ? "放电 \(Fmt.watt(-p))" : "待机 0 W")
-            return (text, p > 20 ? "能量流入" : (p < -20 ? "能量流出" : "待机"))
+            // 与 HA _derivedState 同口径：只看互斥的正值通道
+            let charging = (data.charge ?? 0) > 0 && (data.discharge ?? 0) <= 0
+            let discharging = (data.discharge ?? 0) > 0 && (data.charge ?? 0) <= 0
+            if charging { return ("充电 \(Fmt.watt(data.charge))", "能量流入") }
+            if discharging { return ("放电 \(Fmt.watt(data.discharge))", "能量流出") }
+            return ("待机 0 W", "待机")
         case .grid:
             let g = data.grid ?? 0
             let direction = abs(g) < 50 ? "正常" : (g > 0 ? "取电" : "馈电")
@@ -331,10 +336,11 @@ struct ContentView: View {
 
                 Spacer(minLength: 0)
 
-                BatteryGlyph(soc: data.soc, charging: (data.batteryPower ?? 0) > 20)
+                BatteryGlyph(soc: data.soc, charging: (data.charge ?? 0) > 0 && (data.discharge ?? 0) <= 0)
                     .frame(width: 66, height: 100)
                     .padding(.trailing, 4)
             }
+            .shadow(color: Color.black.opacity(0.5), radius: 2, x: 0, y: 1)
             .padding(.horizontal, 14)
             .padding(.vertical, 13)
             .frame(maxWidth: .infinity, minHeight: 132, alignment: .leading)
@@ -348,16 +354,18 @@ struct ContentView: View {
     }
 
     private var batteryHeadline: String {
-        let p = data.batteryPower ?? 0
-        if p > 20 { return "充电 \(Fmt.watt(p))" }
-        if p < -20 { return "放电 \(Fmt.watt(-p))" }
+        let charging = (data.charge ?? 0) > 0 && (data.discharge ?? 0) <= 0
+        let discharging = (data.discharge ?? 0) > 0 && (data.charge ?? 0) <= 0
+        if charging { return "充电 \(Fmt.watt(data.charge))" }
+        if discharging { return "放电 \(Fmt.watt(data.discharge))" }
         return "待机 0 W"
     }
 
     private var batterySubline: String {
-        let p = data.batteryPower ?? 0
-        if p > 20 { return "能量流入" }
-        if p < -20 { return "能量流出" }
+        let charging = (data.charge ?? 0) > 0 && (data.discharge ?? 0) <= 0
+        let discharging = (data.discharge ?? 0) > 0 && (data.charge ?? 0) <= 0
+        if charging { return "能量流入" }
+        if discharging { return "能量流出" }
         return "待机"
     }
 
@@ -381,6 +389,7 @@ struct ContentView: View {
                 energyItem("累计发电", Fmt.kwh(data.totalPv, digits: 1))
             }
         }
+        .shadow(color: Color.black.opacity(0.5), radius: 2, x: 0, y: 1)
         .padding(.horizontal, 14)
         .padding(.vertical, 13)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -479,20 +488,20 @@ struct GlassCard: ViewModifier {
 
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
-            // iOS 27 液态玻璃：轻微深色 tint 让浅色天气背景上的文字保持可读，
-            // 同时保留折射与边缘高光，避免"雾蒙蒙"的磨砂感。
+            // iOS 26/27 水滴玻璃：.clear 不磨砂，靠背景折射 + 边缘高光呈现通透质感。
+            // .regular 是磨砂，会变成"毛玻璃"，这里绝不使用。
             content.glassEffect(
-                .regular.tint(Color(hex: 0x0A1C2B).opacity(0.30)),
+                .clear.interactive(),
                 in: RoundedRectangle(cornerRadius: radius, style: .continuous)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .strokeBorder(
                         LinearGradient(
-                            colors: [Color.white.opacity(0.34), Color.white.opacity(0.05)],
+                            colors: [Color.white.opacity(0.55), Color.white.opacity(0.08), Color.white.opacity(0.28)],
                             startPoint: .topLeading, endPoint: .bottomTrailing
                         ),
-                        lineWidth: 0.8
+                        lineWidth: 1.1
                     )
             )
         } else {
@@ -631,22 +640,21 @@ struct WeatherBackdrop: View {
                 )
             }
             .frame(width: geo.size.width, height: geo.size.height)
-                // 天气背景离屏合成一次，滚动时不再每帧重算整棵图层树
-                .drawingGroup(opaque: false)
         }
         .ignoresSafeArea()
         .animation(.easeInOut(duration: 0.7), value: isNight)
         .onAppear {
-            // 背景推拉用 22 秒慢速循环；降低幅度与频率，减少滚动时的持续合成压力
-            withAnimation(.linear(duration: 22).repeatForever(autoreverses: true)) {
+            // 不用 drawingGroup：它会把动态图层烘焙成静态位图导致背景不动。
+            // 用 linear 慢速循环，兼顾动感与滚动性能。
+            withAnimation(.linear(duration: 18).repeatForever(autoreverses: true)) {
                 drift = 1
-                zoom = 1.08
+                zoom = 1.09
+            }
+            withAnimation(.linear(duration: 5).repeatForever(autoreverses: true)) {
+                sunPulse = 1.06
             }
             withAnimation(.linear(duration: 6).repeatForever(autoreverses: true)) {
-                sunPulse = 1.05
-            }
-            withAnimation(.linear(duration: 7).repeatForever(autoreverses: true)) {
-                moonPulse = 0.96
+                moonPulse = 0.95
             }
         }
     }
@@ -856,10 +864,26 @@ struct LuminaHero: View {
 
     private var activePV: Bool { (data.pv1 ?? 0) > 20 }
     private var activeLoad: Bool { (data.load ?? 0) > 20 }
-    private var activeBattery: Bool { abs(data.batteryPower ?? 0) > 20 }
-    private var activeGrid: Bool { abs(data.grid ?? 0) > 20 }
-    private var batteryDischarging: Bool { (data.discharge ?? 0) > (data.charge ?? 0) }
+    private var activeBattery: Bool {
+        // 与 HA _derivedState 一致：只看两个互斥正值，不看带符号原始功率
+        (data.charge ?? 0) > 0 || (data.discharge ?? 0) > 0
+    }
+    private var activeGrid: Bool {
+        // 面板从 grid_power_raw 拆分：正=取电，负=馈电，零=正常
+        abs(data.grid ?? 0) > 20
+    }
+    /// 电池：只有 discharge 单独为正才是放电；两者同正按 HA 判为 unknown（静止）
+    private var batteryDischarging: Bool {
+        (data.discharge ?? 0) > 0 && !((data.charge ?? 0) > 0)
+    }
+    /// 市电：原始值为负才是馈电（面板 fallback 用 grid_power_raw 拆分）
     private var gridExporting: Bool { (data.grid ?? 0) < 0 }
+    /// 电池方向：充电/放电/待机，供浮标与图例同步
+    private var batteryDirection: String {
+        if (data.charge ?? 0) > 0 && (data.discharge ?? 0) <= 0 { return "充电" }
+        if (data.discharge ?? 0) > 0 && (data.charge ?? 0) <= 0 { return "放电" }
+        return "待机"
+    }
 
     private var buoyText: CGFloat { 10 }
 
@@ -903,9 +927,17 @@ struct LuminaHero: View {
         buoy {
             VStack(spacing: 0) {
                 Text(Fmt.percent(data.soc)).font(.system(size: buoyText + 1, weight: .heavy))
-                Text(Fmt.watt(abs(data.batteryPower ?? 0))).font(.system(size: buoyText - 1, weight: .semibold))
+                Text(batteryBuoyWatt).font(.system(size: buoyText - 1, weight: .semibold))
             }
         }
+    }
+
+    private var batteryBuoyWatt: String {
+        let charging = (data.charge ?? 0) > 0 && (data.discharge ?? 0) <= 0
+        let discharging = (data.discharge ?? 0) > 0 && (data.charge ?? 0) <= 0
+        if charging { return Fmt.watt(data.charge) }
+        if discharging { return Fmt.watt(data.discharge) }
+        return "0 W"
     }
 
     private var buoyGrid: some View {
