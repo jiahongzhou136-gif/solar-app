@@ -539,11 +539,51 @@ struct HAClient {
 
     func fetchSolar() async throws -> SolarData {
         let text = try await postTemplate(SolarConfig.mainEntities)
-        let parsed = SolarData.parse(text)
+        var parsed = SolarData.parse(text)
         if parsed.isEmptyReading {
             throw HAError.unexpectedBody(String(text.prefix(100)))
         }
+        // 天气实体的 forecast attribute 在新版 HA 已移除，改走 get_forecasts 服务。
+        // 每 10 分钟取一次，避免 2 秒轮询反复调用服务。
+        if Date().timeIntervalSince(RainCache.lastFetch) > 600 {
+            if let conditions = try? await fetchHourlyConditions() {
+                RainCache.conditions = conditions
+                RainCache.lastFetch = Date()
+            }
+        }
+        parsed.forecastConditions = RainCache.conditions
         return parsed
+    }
+
+    /// 调 weather.get_forecasts 取未来 4 小时的天气状况，逗号分隔返回
+    private func fetchHourlyConditions() async throws -> String {
+        guard !baseURL.isEmpty, !token.isEmpty else { throw HAError.notConfigured }
+        let base = HAClient.normalize(baseURL)
+        guard let url = URL(string: base + "/api/services/weather/get_forecasts") else {
+            throw HAError.badURL
+        }
+        let body = try JSONSerialization.data(withJSONObject: [
+            "entity_id": "weather.forecast_wo_de_jia",
+            "type": "hourly",
+        ])
+        let headers = [
+            "Authorization": "Bearer \(token.trimmingCharacters(in: .whitespacesAndNewlines))",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "SolarApp/1.0",
+        ]
+        let (status, data) = try await RawHTTP.post(url: url, headers: headers, body: body)
+        guard (200..<300).contains(status) else { throw HAError.http(status) }
+
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let response = json["service_response"] as? [String: Any],
+              let forecast = response["weather.forecast_wo_de_jia"] as? [String: Any],
+              let items = forecast["forecast"] as? [[String: Any]] else {
+            throw HAError.badBody
+        }
+
+        let conditions = items.prefix(4).compactMap { $0["condition"] as? String }
+        return conditions.joined(separator: ",")
     }
 
     func fetchDetail(_ kind: DeviceKind) async throws -> DeviceDetail {
@@ -649,4 +689,12 @@ struct HAClient {
 
         return DeviceDetail(sections: sections, cells: cells, note: note)
     }
+}
+
+// MARK: - 降雨预报缓存
+
+/// 天气数据变化慢，无需随主轮询每 2 秒请求服务
+private enum RainCache {
+    static var conditions: String = ""
+    static var lastFetch: Date = Date(timeIntervalSince1970: 0)
 }

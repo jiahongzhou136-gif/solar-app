@@ -37,18 +37,18 @@ enum Design {
 }
 
 enum Palette {
+    // 与 HA 面板 CSS 变量 1:1：--text #f7fbff / --muted #b7cfdf
     static let bg = Color(hex: 0x0B1118)
     static let accent = Color(hex: 0xF5A623)
     static let cyan = Color(hex: 0x41F4FF)
-    /// 主数值：94% 亮度，柔和但仍清晰（纯白 100% 过于刺眼）
-    static let text = Color(hex: 0xF2F7FC)
-    /// 卡片标题：91%
-    static let title = Color(hex: 0xE8F0F8)
-    /// 次要文字：81%，保留层次又不至于在浅背景不可读
-    static let dim = Color(hex: 0xCFDEEB)
-    /// 三级文字：72%，仅用于弱提示
-    static let sub = Color(hex: 0xB8CCDD)
-    /// 错误标题
+    /// HA --text：主文字与数值
+    static let text = Color(hex: 0xF7FBFF)
+    /// HA 卡片标题：比主文字略柔
+    static let title = Color(hex: 0xEAF3FA)
+    /// HA --muted：副行、脚注
+    static let dim = Color(hex: 0xB7CFDF)
+    /// 三级提示：沿用 HA detail-board small #a9c2d6
+    static let sub = Color(hex: 0xA9C2D6)
     static let danger = Color(hex: 0xFFB4B4)
 }
 
@@ -484,29 +484,30 @@ struct GlassCard: ViewModifier {
 
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
-            // 水滴玻璃：.clear 保留背景折射（不是磨砂），极淡深蓝 tint 只用于给白字垫对比，
-            // 浓度很低，不会变成毛玻璃；边缘用三段式高光模拟水滴镜面。
-            content.glassEffect(
-                .clear.tint(Color(hex: 0x0C2438).opacity(0.16)),
-                in: RoundedRectangle(cornerRadius: radius, style: .continuous)
-            )
-            .background(
-                LinearGradient(
-                    colors: [Color(hex: 0x081826).opacity(0.10), Color(hex: 0x081826).opacity(0.34)],
-                    startPoint: .top, endPoint: .bottom
-                ),
-                in: RoundedRectangle(cornerRadius: radius, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: [Color.white.opacity(0.62), Color.white.opacity(0.10), Color.white.opacity(0.30)],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1.2
-                    )
-            )
+            // 与 HA .card 同源：蓝灰渐变底 + 玻璃折射。
+            // 底色够浓度，文字才能用 HA 的 --text/--muted 而不刺眼。
+            content
+                .background(
+                    LinearGradient(
+                        colors: [Color(hex: 0x477594).opacity(0.46), Color(hex: 0x0A3150).opacity(0.34)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    ),
+                    in: RoundedRectangle(cornerRadius: radius, style: .continuous)
+                )
+                .glassEffect(
+                    .clear.tint(Color(hex: 0x1A3A55).opacity(0.10)),
+                    in: RoundedRectangle(cornerRadius: radius, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.30), Color.white.opacity(0.10), Color.white.opacity(0.30)],
+                                startPoint: .topLeading, endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 0.8
+                        )
+                )
         } else {
             content
                 .background(
@@ -810,24 +811,29 @@ struct LuminaHero: View {
             let h = geo.size.height
 
             ZStack {
-                // 按卡片宽高铺满（非等比裁切），与能流线/浮标的坐标映射严格一致
-                Image("LuminaEntities")
-                    .resizable()
-                    .frame(width: w, height: h)
-                    .clipped()
-                    .opacity(0.98)
+                // 图片、能流线、浮标共用同一变换（放大 8% + 上移 3%），保持坐标对齐
+                ZStack {
+                    Image("LuminaEntities")
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: w, height: h)
 
-                flows(w: w, h: h)
+                    flows(w: w, h: h)
 
-                buoyPV.position(x: w * 0.115, y: h * 0.315)
-                buoyLoad.position(x: w * 0.518, y: h * 0.215)
-                buoyBattery.position(x: w * 0.268, y: h * 0.790)
-                buoyGrid.position(x: w * 0.900, y: h * 0.330)
+                    buoyPV.position(x: w * 0.115, y: h * 0.315)
+                    buoyLoad.position(x: w * 0.518, y: h * 0.215)
+                    buoyBattery.position(x: w * 0.268, y: h * 0.790)
+                    buoyGrid.position(x: w * 0.900, y: h * 0.330)
+                }
+                .frame(width: w, height: h)
+                .scaleEffect(1.08)
+                .offset(y: -h * 0.03)
             }
             .frame(width: w, height: h)
+            .clipped()
         }
-        // 增高全景卡，解决「脚重头轻」：浮标与能流线按百分比/w-h 缩放，会随卡片同步放大
-        .aspectRatio(1.42, contentMode: .fit)
+        // HA 手机端权威比例 5/3 = 1.667，建筑图保持此比例，靠 108% 放大让主体饱满
+        .aspectRatio(boxW / boxH, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: Design.rowRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: Design.rowRadius, style: .continuous)
@@ -841,13 +847,11 @@ struct LuminaHero: View {
     /// 能流完全由 TimelineView 驱动：只有有功率的线路才推进相位。
     /// 相比 4 个 repeatForever + withAnimation，滚动时不会反复触发隐式动画。
     private func flows(w: CGFloat, h: CGFloat) -> some View {
-        // 30fps：12fps 时每帧跳 5pt 会有明显台阶感。
-        // Canvas 合批后单次更新很轻，30fps 不影响滚动流畅度。
+        // 30fps：每帧移动约 3pt，肉眼平滑。速度 90pt/s 约 0.8 秒走完一个 dash 周期。
         TimelineView(.animation(minimumInterval: 1.0 / 30)) { timeline in
             FlowCanvas(
                 w: w, h: h,
-                // 连续相位，不取模：Double 在 1e10 量级仍有 1e-5 精度，避免周期边界跳变
-                phase: timeline.date.timeIntervalSinceReferenceDate * 36,
+                phase: timeline.date.timeIntervalSinceReferenceDate * 90,
                 pv: activePV, load: activeLoad,
                 battery: activeBattery, batteryReverse: batteryDischarging,
                 grid: activeGrid, gridReverse: gridExporting
@@ -983,9 +987,11 @@ private struct FlowCanvas: View {
                             startPoint: .zero, endPoint: CGPoint(x: w, y: h)
                         ),
                         style: StrokeStyle(
-                            lineWidth: max(1.6, w * 0.007),
+                            lineWidth: max(2.4, w * 0.010),
                             lineCap: .round,
-                            dash: [max(20, w * 0.18), max(26, w * 0.20)],
+                            // HA 原值 dasharray 22 58（约 1:2.6），光带短而离散，
+                            // 这里加长到 44:30 让流动更连贯，避免"极慢/断续"观感
+                            dash: [max(44, w * 0.30), max(30, w * 0.20)],
                             // HA: Forward = dashoffset 0→-1000（沿路径起点→终点流动），
                             // Reverse = 0→+1000。phase 是递增正值，故正向取负、反向取正。
                             dashPhase: reverse ? CGFloat(phase) : CGFloat(-phase)
