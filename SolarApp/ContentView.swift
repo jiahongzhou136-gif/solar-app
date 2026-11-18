@@ -192,8 +192,11 @@ struct ContentView: View {
         .animation(Design.snappy, value: data)
         .task {
             withAnimation(Design.springy) { appeared = true }
+            SharedConfig.save(url: haURL, token: haToken)
             await refreshLoop()
         }
+        .onChange(of: haURL) { SharedConfig.save(url: haURL, token: haToken) }
+        .onChange(of: haToken) { SharedConfig.save(url: haURL, token: haToken) }
     }
 
     // MARK: 头部

@@ -20,6 +20,9 @@ targets:
     platform: iOS
     sources:
       - path: SolarApp
+    dependencies:
+      - target: SolarWidget
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.zhoujh.solar.app
@@ -30,6 +33,26 @@ targets:
         ENABLE_BITCODE: "NO"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        CODE_SIGN_ENTITLEMENTS: SolarApp/SolarApp.entitlements
     scheme:
       testTargets: []
       gatherCoverageData: false
+      buildTargets:
+        - target: SolarWidget
+          buildPhases: [sources, frameworks, resources]
+
+  SolarWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: SolarWidget
+      - path: SolarApp/SharedConfig.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.zhoujh.solar.app.widget
+        PRODUCT_NAME: SolarWidget
+        INFOPLIST_FILE: SolarWidget/Info.plist
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: "NO"
+        CODE_SIGN_ENTITLEMENTS: SolarWidget/SolarWidget.entitlements
+    scheme: {}
