@@ -189,7 +189,6 @@ struct ContentView: View {
             }
         }
         .preferredColorScheme(.dark)
-        .animation(Design.snappy, value: data)
         .task {
             withAnimation(Design.springy) { appeared = true }
             SharedConfig.save(url: haURL, token: haToken)
@@ -454,10 +453,10 @@ struct ContentView: View {
         defer { isLoading = false }
         do {
             let fresh = try await client.fetchSolar()
-            withAnimation(Design.snappy) {
-                data = fresh
-                errorText = nil
-            }
+            // 不再用 withAnimation 包住整棵树：数值自身已有 .contentTransition(.numericText())，
+            // 整树动画会在每 2 秒刷新时重算所有玻璃图层，是滑屏掉帧的主因。
+            data = fresh
+            errorText = nil
             consecutiveFailures = 0
             if haptic {
                 UIImpactFeedbackGenerator(style: .soft).impactOccurred()
@@ -467,7 +466,7 @@ struct ContentView: View {
             errorText = HAError.describe(error)
             // 连续失败后清空旧读数，避免长期停在固定数字误导
             if consecutiveFailures >= 3, !data.isEmptyReading {
-                withAnimation(Design.snappy) { data = .empty }
+                data = .empty
             }
         }
     }
@@ -632,19 +631,22 @@ struct WeatherBackdrop: View {
                 )
             }
             .frame(width: geo.size.width, height: geo.size.height)
+                // 天气背景离屏合成一次，滚动时不再每帧重算整棵图层树
+                .drawingGroup(opaque: false)
         }
         .ignoresSafeArea()
         .animation(.easeInOut(duration: 0.7), value: isNight)
         .onAppear {
-            withAnimation(.easeInOut(duration: 13).repeatForever(autoreverses: true)) {
+            // 背景推拉用 22 秒慢速循环；降低幅度与频率，减少滚动时的持续合成压力
+            withAnimation(.linear(duration: 22).repeatForever(autoreverses: true)) {
                 drift = 1
-                zoom = 1.115
+                zoom = 1.08
             }
-            withAnimation(.easeInOut(duration: 4.5).repeatForever(autoreverses: true)) {
-                sunPulse = 1.08
+            withAnimation(.linear(duration: 6).repeatForever(autoreverses: true)) {
+                sunPulse = 1.05
             }
-            withAnimation(.easeInOut(duration: 5.5).repeatForever(autoreverses: true)) {
-                moonPulse = 1.0
+            withAnimation(.linear(duration: 7).repeatForever(autoreverses: true)) {
+                moonPulse = 0.96
             }
         }
     }
@@ -720,10 +722,9 @@ private struct Clouds: View {
 
     var body: some View {
         ZStack {
-            DriftBlob(y: 0.04, widthRatio: 0.92, duration: 16, delay: 0, shift: 0.72, opacity: baseOpacity, dark: dark)
-            DriftBlob(y: 0.24, widthRatio: 0.78, duration: 21, delay: -6, shift: -0.68, opacity: baseOpacity, dark: dark)
-            DriftBlob(y: 0.50, widthRatio: 1.02, duration: 26, delay: -12, shift: 0.80, opacity: baseOpacity, dark: dark)
-            DriftBlob(y: 0.72, widthRatio: 0.66, duration: 19, delay: -9, shift: -0.55, opacity: baseOpacity * 0.7, dark: dark)
+            DriftBlob(y: 0.04, widthRatio: 0.92, duration: 18, delay: 0, shift: 0.55, opacity: baseOpacity, dark: dark)
+            DriftBlob(y: 0.28, widthRatio: 0.82, duration: 24, delay: -8, shift: -0.52, opacity: baseOpacity, dark: dark)
+            DriftBlob(y: 0.58, widthRatio: 1.02, duration: 29, delay: -15, shift: 0.60, opacity: baseOpacity * 0.8, dark: dark)
         }
         .frame(width: size.width, height: size.height)
         .allowsHitTesting(false)
@@ -755,7 +756,7 @@ private struct DriftBlob: View {
                     )
                 )
                 .frame(width: geo.size.width * widthRatio, height: geo.size.height * 0.22)
-                .blur(radius: 14)
+                // RadialGradient 本身已足够柔和，去掉 blur 省一层离屏合成
                 .opacity(opacity)
                 .offset(x: geo.size.width * (x - 0.42), y: geo.size.height * y)
                 .onAppear {
@@ -798,7 +799,6 @@ private struct RainLayer: View {
 
 struct LuminaHero: View {
     let data: SolarData
-    @State private var dashPhase: CGFloat = 0
     @State private var glowIn: CGFloat = 0
 
     private let boxW: CGFloat = 1617
@@ -833,61 +833,26 @@ struct LuminaHero: View {
                 .stroke(Color.white.opacity(0.20), lineWidth: 0.8)
         )
         .onAppear {
-            withAnimation(.linear(duration: 3.4).repeatForever(autoreverses: false)) {
-                dashPhase = 220
-            }
             withAnimation(.easeOut(duration: 0.8)) { glowIn = 1 }
         }
     }
 
+    /// 能流完全由 TimelineView 驱动：只有有功率的线路才推进相位。
+    /// 相比 4 个 repeatForever + withAnimation，滚动时不会反复触发隐式动画。
     private func flows(w: CGFloat, h: CGFloat) -> some View {
-        ZStack {
-            glow(.pv, active: activePV, w: w, h: h)
-            glow(.load, active: activeLoad, w: w, h: h)
-            glow(.battery, active: activeBattery, w: w, h: h)
-            glow(.grid, active: activeGrid, w: w, h: h)
-
-            pulse(.pv, active: activePV, reverse: false, w: w, h: h)
-            pulse(.load, active: activeLoad, reverse: false, w: w, h: h)
-            // 电池放电时光流从电池回到逆变器；市电馈电时从逆变器流向市电
-            pulse(.battery, active: activeBattery, reverse: batteryDischarging, w: w, h: h)
-            pulse(.grid, active: activeGrid, reverse: gridExporting, w: w, h: h)
-
-            Circle()
-                .fill(Palette.cyan.opacity(0.9))
-                .frame(width: max(4, w * 0.012), height: max(4, w * 0.012))
-                .blur(radius: 1.5)
-                .position(x: w * (1010 / boxW), y: h * (640 / boxH))
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+            FlowCanvas(
+                w: w, h: h,
+                phase: timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1000) * 64,
+                pv: activePV, load: activeLoad,
+                battery: activeBattery, batteryReverse: batteryDischarging,
+                grid: activeGrid, gridReverse: gridExporting
+            )
         }
         .allowsHitTesting(false)
         .opacity(glowIn)
     }
 
-    private func glow(_ route: FlowShape, active: Bool, w: CGFloat, h: CGFloat) -> some View {
-        route.path(in: CGSize(width: w, height: h))
-            .stroke(Palette.cyan.opacity(active ? 0.26 : 0.08), lineWidth: max(5, w * 0.018))
-            .blur(radius: 2)
-    }
-
-    private func pulse(_ route: FlowShape, active: Bool, reverse: Bool, w: CGFloat, h: CGFloat) -> some View {
-        route.path(in: CGSize(width: w, height: h))
-            .stroke(
-                LinearGradient(
-                    colors: [Color(hex: 0x78F8FF), Color(hex: 0xD9FFFF), Color(hex: 0x44E5FF)],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                ),
-                style: StrokeStyle(
-                    lineWidth: max(1.6, w * 0.007),
-                    lineCap: .round,
-                    dash: [max(20, w * 0.18), max(26, w * 0.20)],
-                    // dashPhase 取负即可让虚线沿路径反方向流动，等价于 HA 的 .reverse
-                    dashPhase: reverse ? -dashPhase : dashPhase
-                )
-            )
-            .opacity(active ? 0.95 : 0.30)
-            .animation(.easeInOut(duration: 0.4), value: active)
-    }
 
     private var activePV: Bool { (data.pv1 ?? 0) > 20 }
     private var activeLoad: Bool { (data.load ?? 0) > 20 }
@@ -960,6 +925,56 @@ struct LuminaHero: View {
     }
 }
 
+/// 一个 Canvas 画完所有能流线：避免 8 个独立 Shape + blur 图层，滚动时开销显著降低。
+/// 相位完全由外部时钟给出；只有 active 的线路才推进相位，无数据时线静止。
+private struct FlowCanvas: View {
+    let w: CGFloat, h: CGFloat
+    let phase: Double
+    let pv: Bool, load: Bool
+    let battery: Bool, batteryReverse: Bool
+    let grid: Bool, gridReverse: Bool
+
+    var body: some View {
+        Canvas { ctx, _ in
+            let routes: [(FlowShape, Bool, Bool)] = [
+                (.pv, pv, false),
+                (.load, load, false),
+                (.battery, battery, batteryReverse),
+                (.grid, grid, gridReverse),
+            ]
+            for (route, active, reverse) in routes {
+                let path = route.path(in: CGSize(width: w, height: h))
+                // 底光常显，无数据时更暗但不消失
+                ctx.stroke(path, with: .color(Color(hex: 0x41F4FF).opacity(active ? 0.24 : 0.07)),
+                           lineWidth: max(5, w * 0.018))
+                if active {
+                    ctx.stroke(
+                        path,
+                        with: .linearGradient(
+                            Gradient(colors: [Color(hex: 0x78F8FF), Color(hex: 0xD9FFFF), Color(hex: 0x44E5FF)]),
+                            startPoint: .zero, endPoint: CGPoint(x: w, y: h)
+                        ),
+                        lineWidth: max(1.6, w * 0.007),
+                        style: StrokeStyle(
+                            lineWidth: max(1.6, w * 0.007),
+                            lineCap: .round,
+                            dash: [max(20, w * 0.18), max(26, w * 0.20)],
+                            dashPhase: reverse ? CGFloat(-phase) : CGFloat(phase)
+                        )
+                    )
+                } else {
+                    ctx.stroke(path, with: .color(Color(hex: 0x78F8FF).opacity(0.28)),
+                               lineWidth: max(1.6, w * 0.007))
+                }
+            }
+            let hub = CGPoint(x: w * (1010 / 1617), y: h * (640 / 971))
+            let r = max(3, w * 0.006)
+            ctx.fill(Path(ellipseIn: CGRect(x: hub.x - r, y: hub.y - r, width: r * 2, height: r * 2)),
+                     with: .color(Palette.cyan.opacity(0.9)))
+        }
+    }
+}
+
 // MARK: - 能流路径（与 HA 面板 SVG 同源）
 
 enum FlowShape {
@@ -1027,9 +1042,10 @@ struct ForecastBar: View {
             .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .modifier(GlassCard(radius: Design.controlRadius))
+        // 预测条嵌入天气背景，不加玻璃卡片
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
+        .shadow(color: Color.black.opacity(0.55), radius: 3, y: 1)
     }
 
     private var secondLine: String {
