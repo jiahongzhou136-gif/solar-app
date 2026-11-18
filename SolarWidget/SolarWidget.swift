@@ -171,72 +171,138 @@ struct SolarWidgetEntryView: View {
         }
     }
 
+    private var batteryText: String {
+        guard let c = entry.data.charge, let d = entry.data.discharge else { return "--" }
+        if c > 0 && d <= 0 { return "充电 \(Fmt.number(c)) W" }
+        if d > 0 && c <= 0 { return "放电 \(Fmt.number(d)) W" }
+        return "待机"
+    }
+
     private var needSetup: some View {
         VStack(spacing: 5) {
-            Image(systemName: "sun.max.fill").font(.title2).foregroundStyle(.white)
-            Text("小组件未读到配置").font(.caption.weight(.semibold)).foregroundStyle(.white)
+            Image(systemName: "sun.max.fill").font(.title2).foregroundStyle(WColor.text)
+            Text("小组件未读到配置").font(.caption.weight(.semibold)).foregroundStyle(WColor.text)
             Text("打开一次 SolarApp，确认地址和令牌已保存后，再回来添加小组件")
-                .font(.caption2).foregroundStyle(.white.opacity(0.75))
+                .font(.caption2).foregroundStyle(WColor.label)
                 .multilineTextAlignment(.center)
             Text("地址:\(SharedConfig.url.isEmpty ? "无" : "有") 令牌:\(SharedConfig.token.isEmpty ? "无" : "有")")
-                .font(.caption2).foregroundStyle(.white.opacity(0.55))
+                .font(.caption2).foregroundStyle(WColor.label.opacity(0.8))
         }
         .padding(10)
     }
 
     private var smallView: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("光伏").font(.caption).foregroundStyle(.white.opacity(0.7))
-            Text(Fmt.watt(entry.data.pv)).font(.system(size: 26, weight: .bold, design: .rounded)).foregroundStyle(.white)
-            Spacer()
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 5) {
+                Circle().fill(WColor.cyan).frame(width: 6, height: 6)
+                Text("实时发电").font(.system(size: 11, weight: .medium)).foregroundStyle(WColor.label)
+            }
+            Spacer(minLength: 4)
+            HStack(alignment: .lastTextBaseline, spacing: 3) {
+                Text(Fmt.number(entry.data.pv)).font(.system(size: 34, weight: .semibold, design: .rounded))
+                    .foregroundStyle(WColor.text).minimumScaleFactor(0.7)
+                Text("W").font(.system(size: 13, weight: .medium)).foregroundStyle(WColor.label)
+            }
+            Spacer(minLength: 3)
             HStack(spacing: 4) {
-                Text("今日").font(.caption2).foregroundStyle(.white.opacity(0.6))
-                Text(Fmt.kwh(entry.data.daily)).font(.caption.weight(.semibold)).foregroundStyle(.white)
+                Text("今日").font(.system(size: 11)).foregroundStyle(WColor.label)
+                Text(Fmt.kwh(entry.data.daily)).font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(WColor.value)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var mediumView: some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("实时功率").font(.caption2).foregroundStyle(.white.opacity(0.7))
-                Text(Fmt.watt(entry.data.pv)).font(.system(size: 24, weight: .bold, design: .rounded)).foregroundStyle(.white)
+        HStack(spacing: 0) {
+            // 左侧：核心指标聚焦
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 5) {
+                    Circle().fill(WColor.cyan).frame(width: 6, height: 6)
+                    Text("实时发电").font(.system(size: 12, weight: .medium)).foregroundStyle(WColor.label)
+                }
+                Spacer(minLength: 2)
+                HStack(alignment: .lastTextBaseline, spacing: 3) {
+                    Text(Fmt.number(entry.data.pv)).font(.system(size: 40, weight: .semibold, design: .rounded))
+                        .foregroundStyle(WColor.text).minimumScaleFactor(0.65)
+                    Text("W").font(.system(size: 14, weight: .medium)).foregroundStyle(WColor.label)
+                }
+                Spacer(minLength: 0)
             }
-            Divider().background(Color.white.opacity(0.2))
-            metric("今日发电", Fmt.kwh(entry.data.daily))
-            Divider().background(Color.white.opacity(0.2))
-            metric("电池 SOC", Fmt.percent(entry.data.soc))
-            Divider().background(Color.white.opacity(0.2))
-            metric("负载", Fmt.watt(entry.data.load))
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+
+            Rectangle().fill(WColor.divider).frame(width: 1)
+                .padding(.vertical, 10)
+
+            // 右侧：次要信息竖排
+            VStack(alignment: .leading, spacing: 0) {
+                sideLine("今日发电", Fmt.kwh(entry.data.daily))
+                sideLine("电池 SOC", Fmt.percent(entry.data.soc))
+                sideLine("当前负载", Fmt.watt(entry.data.load))
+            }
+            .frame(width: 128, alignment: .leading)
         }
     }
 
     private var largeView: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack { Text("光伏监控").font(.headline).foregroundStyle(.white); Spacer() }
-            HStack(spacing: 16) {
-                metric("实时功率", Fmt.watt(entry.data.pv))
-                metric("今日发电", Fmt.kwh(entry.data.daily))
+            HStack(spacing: 6) {
+                Circle().fill(WColor.cyan).frame(width: 7, height: 7)
+                Text("光伏监控").font(.system(size: 14, weight: .semibold)).foregroundStyle(WColor.text)
+                Spacer()
             }
-            HStack(spacing: 16) {
-                metric("电池 SOC", Fmt.percent(entry.data.soc))
-                metric("当前负载", Fmt.watt(entry.data.load))
+            HStack(alignment: .lastTextBaseline, spacing: 4) {
+                Text(Fmt.number(entry.data.pv)).font(.system(size: 46, weight: .semibold, design: .rounded))
+                    .foregroundStyle(WColor.text).minimumScaleFactor(0.6)
+                Text("W").font(.system(size: 15, weight: .medium)).foregroundStyle(WColor.label)
+            }
+            VStack(spacing: 8) {
+                HStack(spacing: 10) { metric("今日发电", Fmt.kwh(entry.data.daily)); metric("电池 SOC", Fmt.percent(entry.data.soc)) }
+                HStack(spacing: 10) { metric("当前负载", Fmt.watt(entry.data.load)); metric("电池状态", batteryText) }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func sideLine(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(label).font(.system(size: 11)).foregroundStyle(WColor.label)
+            Text(value).font(.system(size: 15, weight: .semibold, design: .rounded)).foregroundStyle(WColor.value)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func metric(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.caption2).foregroundStyle(.white.opacity(0.7))
-            Text(value).font(.system(size: 17, weight: .semibold, design: .rounded)).foregroundStyle(.white)
+            Text(label).font(.system(size: 11)).foregroundStyle(WColor.label)
+            Text(value).font(.system(size: 16, weight: .semibold, design: .rounded)).foregroundStyle(WColor.value)
+                .minimumScaleFactor(0.75)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .background(WColor.tile, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
+}
+
+// MARK: - Widget 配色（与主 App 同为 94/81% 柔和色阶）
+
+private enum WColor {
+    static let text = Color(hex: 0xF2F7FC)
+    static let value = Color(hex: 0xE4EFF8)
+    static let label = Color(hex: 0xCFDEEB)
+    static let cyan = Color(hex: 0x41F4FF)
+    static let divider = Color.white.opacity(0.16)
+    static let tile = Color.white.opacity(0.07)
 }
 
 // MARK: - Format (与 App 内一致，避免跨 target 耦合)
 
 private enum Fmt {
+    static func number(_ v: Double?) -> String {
+        guard let v else { return "--" }
+        return String(format: "%.0f", v)
+    }
     static func watt(_ v: Double?) -> String {
         guard let v else { return "--" }
         return String(format: "%.0f W", v)

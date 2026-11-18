@@ -40,14 +40,14 @@ enum Palette {
     static let bg = Color(hex: 0x0B1118)
     static let accent = Color(hex: 0xF5A623)
     static let cyan = Color(hex: 0x41F4FF)
-    /// 主数值：纯白，最高对比
-    static let text = Color(hex: 0xFFFFFF)
-    /// 卡片标题：近白，仍保持高对比
-    static let title = Color(hex: 0xE8F4FF)
-    /// 次要文字：副行、脚注。足够亮，避免浅背景不可读
-    static let dim = Color(hex: 0xD2E4F2)
-    /// 三级文字：弱提示
-    static let sub = Color(hex: 0xB8D0E2)
+    /// 主数值：94% 亮度，柔和但仍清晰（纯白 100% 过于刺眼）
+    static let text = Color(hex: 0xF2F7FC)
+    /// 卡片标题：91%
+    static let title = Color(hex: 0xE8F0F8)
+    /// 次要文字：81%，保留层次又不至于在浅背景不可读
+    static let dim = Color(hex: 0xCFDEEB)
+    /// 三级文字：72%，仅用于弱提示
+    static let sub = Color(hex: 0xB8CCDD)
     /// 错误标题
     static let danger = Color(hex: 0xFFB4B4)
 }
@@ -841,11 +841,13 @@ struct LuminaHero: View {
     /// 能流完全由 TimelineView 驱动：只有有功率的线路才推进相位。
     /// 相比 4 个 repeatForever + withAnimation，滚动时不会反复触发隐式动画。
     private func flows(w: CGFloat, h: CGFloat) -> some View {
-        // 12fps 足够呈现流动感；降低频率可显著减少滚动时的 Canvas 重建
-        TimelineView(.animation(minimumInterval: 1.0 / 12)) { timeline in
+        // 30fps：12fps 时每帧跳 5pt 会有明显台阶感。
+        // Canvas 合批后单次更新很轻，30fps 不影响滚动流畅度。
+        TimelineView(.animation(minimumInterval: 1.0 / 30)) { timeline in
             FlowCanvas(
                 w: w, h: h,
-                phase: timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1000) * 64,
+                // 连续相位，不取模：Double 在 1e10 量级仍有 1e-5 精度，避免周期边界跳变
+                phase: timeline.date.timeIntervalSinceReferenceDate * 36,
                 pv: activePV, load: activeLoad,
                 battery: activeBattery, batteryReverse: batteryDischarging,
                 grid: activeGrid, gridReverse: gridExporting
