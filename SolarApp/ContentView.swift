@@ -796,14 +796,13 @@ private struct RainLayer: View {
     }
 }
 
-// MARK: - 全景卡
+// MARK: - 全景卡（雷凌白墙建筑 1:1 还原）
+// 底图：station_flow/isg.png（1038×634，原生透明底，含建筑+灰色管路）
+// 浮标/虚线/流动段：代码绘制，坐标按雷凌截图标定
 
 struct LuminaHero: View {
     let data: SolarData
     @State private var glowIn: CGFloat = 0
-
-    private let boxW: CGFloat = 1617
-    private let boxH: CGFloat = 971
 
     var body: some View {
         GeometryReader { geo in
@@ -811,233 +810,182 @@ struct LuminaHero: View {
             let h = geo.size.height
 
             ZStack {
-                // 图片、能流线、浮标共用同一变换（放大 8% + 上移 3%），保持坐标对齐
-                ZStack {
-                    Image("LuminaEntities")
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: w, height: h)
+                // 建筑主体（透明底，中心对齐截图建筑位置）
+                Image("LuminaHouse")
+                    .resizable()
+                    .frame(width: w * 0.88, height: w * 0.88 * (634.0 / 1038.0))
+                    .position(x: w * 0.48, y: h * 0.51)
 
-                    flows(w: w, h: h)
+                // 引线虚线 + 青色流动段
+                HouseFlowCanvas(
+                    w: w, h: h,
+                    gridActive: activeGrid,
+                    gridReverse: gridExporting,
+                    pvActive: activePV,
+                    loadActive: activeLoad,
+                    batteryActive: activeBattery,
+                    batteryReverse: batteryDischarging
+                )
+                .allowsHitTesting(false)
+                .opacity(glowIn)
 
-                    buoyPV.position(x: w * 0.115, y: h * 0.315)
-                    buoyLoad.position(x: w * 0.518, y: h * 0.215)
-                    buoyBattery.position(x: w * 0.268, y: h * 0.790)
-                    buoyGrid.position(x: w * 0.900, y: h * 0.330)
+                // 六组浮标（位置按雷凌截图）
+                houseBuoy("电网", gridValue, 0.24, 0.075, w: w, h: h)
+                houseBuoy("光伏板", pvValue, 0.77, 0.050, w: w, h: h)
+                houseBubble("离网负载", loadValue, 0.70, 0.400, w: w, h: h)
+                houseBuoy("网侧负载", "0 W", 0.24, 0.825, w: w, h: h)
+                houseBuoy("发电机", "0 W", 0.47, 0.832, w: w, h: h)
+                houseBuoy("电池", batteryValue, 0.77, 0.765, w: w, h: h)
+
+                // 底部分页指示器（单页样式）
+                HStack(spacing: 6) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.92))
+                        .frame(width: 26, height: 6)
+                    Circle()
+                        .fill(Color.white.opacity(0.35))
+                        .frame(width: 6, height: 6)
                 }
-                .frame(width: w, height: h)
-                .scaleEffect(1.08)
-                .offset(y: -h * 0.03)
+                .position(x: w * 0.5, y: h * 0.962)
             }
-            .frame(width: w, height: h)
-            .clipped()
         }
-        // HA 手机端权威比例 5/3 = 1.667，建筑图保持此比例，靠 108% 放大让主体饱满
-        .aspectRatio(boxW / boxH, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: Design.rowRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Design.rowRadius, style: .continuous)
-                .stroke(Color.white.opacity(0.20), lineWidth: 0.8)
-        )
+        .aspectRatio(1024.0 / 1080.0, contentMode: .fit)
         .onAppear {
             withAnimation(.easeOut(duration: 0.8)) { glowIn = 1 }
         }
     }
 
-    /// 能流完全由 TimelineView 驱动：只有有功率的线路才推进相位。
-    /// 相比 4 个 repeatForever + withAnimation，滚动时不会反复触发隐式动画。
-    private func flows(w: CGFloat, h: CGFloat) -> some View {
-        // 30fps：每帧移动约 3pt，肉眼平滑。速度 90pt/s 约 0.8 秒走完一个 dash 周期。
-        TimelineView(.animation(minimumInterval: 1.0 / 30)) { timeline in
-            FlowCanvas(
-                w: w, h: h,
-                phase: timeline.date.timeIntervalSinceReferenceDate * 90,
-                pv: activePV, load: activeLoad,
-                battery: activeBattery, batteryReverse: batteryDischarging,
-                grid: activeGrid, gridReverse: gridExporting
-            )
-        }
-        .allowsHitTesting(false)
-        .opacity(glowIn)
+    // 数据映射（已确认）：电网←grid 光伏←pv1 离网负载←load 电池←充放互斥 网侧负载/发电机=0
+    private var gridValue: String {
+        guard let g = data.grid else { return "--" }
+        if abs(g) < 50 { return "0 W" }
+        return Fmt.watt(data.grid)
     }
-
+    private var pvValue: String { Fmt.watt(data.pv1) }
+    private var loadValue: String { Fmt.watt(data.load) }
+    private var batteryValue: String {
+        let charging = (data.charge ?? 0) > 0 && (data.discharge ?? 0) <= 0
+        let discharging = (data.discharge ?? 0) > 0 && (data.charge ?? 0) <= 0
+        if charging, let c = data.charge { return "+\(Fmt.watt(c))" }
+        if discharging, let d = data.discharge { return "-\(Fmt.watt(d))" }
+        return "0 W"
+    }
 
     private var activePV: Bool { (data.pv1 ?? 0) > 20 }
     private var activeLoad: Bool { (data.load ?? 0) > 20 }
     private var activeBattery: Bool {
-        // 与 HA _derivedState 一致：只看两个互斥正值，不看带符号原始功率
+        // 与 HA _derivedState 一致：只看两个互斥正值
         (data.charge ?? 0) > 0 || (data.discharge ?? 0) > 0
     }
-    private var activeGrid: Bool {
-        // 面板从 grid_power_raw 拆分：正=取电，负=馈电，零=正常
-        abs(data.grid ?? 0) > 20
-    }
-    /// 电池：只有 discharge 单独为正才是放电；两者同正按 HA 判为 unknown（静止）
+    private var activeGrid: Bool { abs(data.grid ?? 0) > 20 }
     private var batteryDischarging: Bool {
         (data.discharge ?? 0) > 0 && !((data.charge ?? 0) > 0)
     }
-    /// 市电：原始值为负才是馈电（面板 fallback 用 grid_power_raw 拆分）
-    private var gridExporting: Bool { (data.grid ?? 0) < 0 }
-    /// 电池方向：充电/放电/待机，供浮标与图例同步
-    private var batteryDirection: String {
-        if (data.charge ?? 0) > 0 && (data.discharge ?? 0) <= 0 { return "充电" }
-        if (data.discharge ?? 0) > 0 && (data.charge ?? 0) <= 0 { return "放电" }
-        return "待机"
-    }
 
-    private var buoyText: CGFloat { 10 }
-
-    private func buoy<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        content()
-            .padding(.horizontal, 5)
-            .padding(.vertical, 3)
-            .background(
-                Color(hex: 0x021424).opacity(0.82),
-                in: RoundedRectangle(cornerRadius: Design.buoyRadius, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Design.buoyRadius, style: .continuous)
-                    .stroke(Color(hex: 0xE0FCFF).opacity(0.45), lineWidth: 0.6)
-            )
-            .shadow(color: Color(hex: 0x19EEFF).opacity(0.42), radius: 4)
-            .foregroundStyle(Palette.cyan)
-            .fixedSize()
-    }
-
-    private var buoyPV: some View {
-        buoy {
-            VStack(alignment: .leading, spacing: 1) {
-                Text("S1: \(Fmt.watt(data.pv1))").font(.system(size: buoyText, weight: .heavy))
-                Text("S2: 未接入").font(.system(size: buoyText - 1, weight: .semibold))
-            }
-            .italic()
+    // 普通浮标：无底色白字（深色天气背景上），标签小字+数值大粗字
+    private func houseBuoy(_ label: String, _ value: String, _ xf: CGFloat, _ yf: CGFloat,
+                           w: CGFloat, h: CGFloat) -> some View {
+        VStack(spacing: 2) {
+            Text(label)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Palette.text.opacity(0.82))
+            Text(value)
+                .font(.system(size: 21, weight: .bold, design: .rounded))
+                .foregroundStyle(Palette.text)
+                .minimumScaleFactor(0.7)
+                .lineLimit(1)
         }
+        .shadow(color: Color.black.opacity(0.45), radius: 3, x: 0, y: 1)
+        .fixedSize()
+        .position(x: w * xf, y: h * yf)
     }
 
-    private var buoyLoad: some View {
-        buoy {
-            VStack(spacing: 0) {
-                Text(Fmt.watt(data.load)).font(.system(size: buoyText + 1, weight: .heavy))
-                Text("住宅负载").font(.system(size: buoyText - 1.5, weight: .semibold)).opacity(0.85)
-            }
+    // 离网负载：深色半透明气泡+白字（雷凌截图样式）
+    private func houseBubble(_ label: String, _ value: String, _ xf: CGFloat, _ yf: CGFloat,
+                             w: CGFloat, h: CGFloat) -> some View {
+        VStack(spacing: 1) {
+            Text(label)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.9))
+            Text(value)
+                .font(.system(size: 17, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.white)
         }
-    }
-
-    private var buoyBattery: some View {
-        buoy {
-            VStack(spacing: 0) {
-                Text(Fmt.percent(data.soc)).font(.system(size: buoyText + 1, weight: .heavy))
-                Text(batteryBuoyWatt).font(.system(size: buoyText - 1, weight: .semibold))
-            }
-        }
-    }
-
-    private var batteryBuoyWatt: String {
-        let charging = (data.charge ?? 0) > 0 && (data.discharge ?? 0) <= 0
-        let discharging = (data.discharge ?? 0) > 0 && (data.charge ?? 0) <= 0
-        if charging { return Fmt.watt(data.charge) }
-        if discharging { return Fmt.watt(data.discharge) }
-        return "0 W"
-    }
-
-    private var buoyGrid: some View {
-        buoy {
-            VStack(alignment: .trailing, spacing: 0) {
-                Text("市电").font(.system(size: buoyText - 2, weight: .semibold)).opacity(0.85)
-                Text(Fmt.watt(data.grid)).font(.system(size: buoyText, weight: .heavy))
-                Text(gridStateText).font(.system(size: buoyText - 2, weight: .semibold)).opacity(0.85)
-            }
-        }
-    }
-
-    private var gridStateText: String {
-        guard let g = data.grid else { return "--" }
-        if abs(g) < 50 { return "正常" }
-        return g > 0 ? "取电" : "馈电"
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(Color(hex: 0x172033).opacity(0.72),
+                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .shadow(color: Color.black.opacity(0.30), radius: 4, y: 2)
+        .fixedSize()
+        .position(x: w * xf, y: h * yf)
     }
 }
 
-/// 一个 Canvas 画完所有能流线：避免 8 个独立 Shape + blur 图层，滚动时开销显著降低。
-/// 相位完全由外部时钟给出；只有 active 的线路才推进相位，无数据时线静止。
-private struct FlowCanvas: View {
+/// 引线虚线（静态灰白）+ 青色流动段（雷凌复刻：短亮段沿管路流动，方向=能量流向）
+private struct HouseFlowCanvas: View {
     let w: CGFloat, h: CGFloat
-    let phase: Double
-    let pv: Bool, load: Bool
-    let battery: Bool, batteryReverse: Bool
-    let grid: Bool, gridReverse: Bool
+    let gridActive: Bool
+    let gridReverse: Bool
+    let pvActive: Bool
+    let loadActive: Bool
+    let batteryActive: Bool
+    let batteryReverse: Bool
+
+    // 静态竖虚线引线（x1,y1,x2,y2 组件比例；按雷凌截图标定）
+    private var dashedLines: [(CGFloat, CGFloat, CGFloat, CGFloat)] {
+        [
+            (0.215, 0.105, 0.215, 0.245),  // 电网 → 屋顶左上方
+            (0.730, 0.080, 0.730, 0.245),  // 光伏板 → 屋顶右上方
+            (0.215, 0.800, 0.215, 0.852),  // 图底 → 网侧负载
+            (0.440, 0.800, 0.440, 0.852),  // 图底 → 发电机
+            (0.730, 0.688, 0.730, 0.732),  // 电池柜顶 → 电池浮标
+        ]
+    }
+
+    // 青色流动段：(x1,y1,x2,y2,active,reverse)
+    // reverse=false 流向路径终点（取电↓ 发电↓ 供电→），true 流向起点（馈电↑ 放电↑）
+    private var flowSegments: [(CGFloat, CGFloat, CGFloat, CGFloat, Bool, Bool)] {
+        [
+            (0.215, 0.245, 0.215, 0.325, gridActive, gridReverse),             // 电网：取电↓ / 馈电↑
+            (0.730, 0.245, 0.730, 0.340, pvActive, false),                      // 光伏发电 ↓
+            (0.545, 0.452, 0.640, 0.452, loadActive, false),                    // 逆变器 → 离网负载 →
+            (0.730, 0.560, 0.730, 0.688, batteryActive, batteryReverse),        // 充电↓ / 放电↑
+        ]
+    }
 
     var body: some View {
-        Canvas { ctx, _ in
-            let routes: [(FlowShape, Bool, Bool)] = [
-                (.pv, pv, false),
-                (.load, load, false),
-                (.battery, battery, batteryReverse),
-                (.grid, grid, gridReverse),
-            ]
-            for (route, active, reverse) in routes {
-                let path = route.path(in: CGSize(width: w, height: h))
-                // 底光常显，无数据时更暗但不消失
-                ctx.stroke(path, with: .color(Color(hex: 0x41F4FF).opacity(active ? 0.24 : 0.07)),
-                           lineWidth: max(5, w * 0.018))
-                if active {
+        TimelineView(.animation(minimumInterval: 1.0 / 30)) { timeline in
+            let phase = timeline.date.timeIntervalSinceReferenceDate * 45
+            Canvas { ctx, _ in
+                for (x1, y1, x2, y2) in dashedLines {
+                    var p = Path()
+                    p.move(to: CGPoint(x: w * x1, y: h * y1))
+                    p.addLine(to: CGPoint(x: w * x2, y: h * y2))
+                    ctx.stroke(p, with: .color(Color.white.opacity(0.42)),
+                               style: StrokeStyle(lineWidth: 1.4, dash: [5, 6]))
+                }
+                for (x1, y1, x2, y2, active, reverse) in flowSegments where active {
+                    var p = Path()
+                    p.move(to: CGPoint(x: w * x1, y: h * y1))
+                    p.addLine(to: CGPoint(x: w * x2, y: h * y2))
+                    // 雷凌 Forward = dashoffset 负方向（流向路径终点）
                     ctx.stroke(
-                        path,
+                        p,
                         with: .linearGradient(
-                            Gradient(colors: [Color(hex: 0x78F8FF), Color(hex: 0xD9FFFF), Color(hex: 0x44E5FF)]),
-                            startPoint: .zero, endPoint: CGPoint(x: w, y: h)
+                            Gradient(colors: [Color(hex: 0x9FF6FF), Color(hex: 0x3FD2E4)]),
+                            startPoint: CGPoint(x: w * x1, y: h * y1),
+                            endPoint: CGPoint(x: w * x2, y: h * y2)
                         ),
                         style: StrokeStyle(
-                            lineWidth: max(2.4, w * 0.010),
+                            lineWidth: 4.5,
                             lineCap: .round,
-                            // HA 原值 dasharray 22 58（约 1:2.6），光带短而离散，
-                            // 这里加长到 44:30 让流动更连贯，避免"极慢/断续"观感
-                            dash: [max(44, w * 0.30), max(30, w * 0.20)],
-                            // HA: Forward = dashoffset 0→-1000（沿路径起点→终点流动），
-                            // Reverse = 0→+1000。phase 是递增正值，故正向取负、反向取正。
-                            dashPhase: reverse ? CGFloat(phase) : CGFloat(-phase)
+                            dash: [max(8, w * 0.024), max(16, w * 0.048)],
+                            dashPhase: reverse ? CGFloat(phase) : -CGFloat(phase)
                         )
                     )
-                } else {
-                    ctx.stroke(path, with: .color(Color(hex: 0x78F8FF).opacity(0.28)),
-                               lineWidth: max(1.6, w * 0.007))
                 }
             }
-            let hub = CGPoint(x: w * (1010 / 1617), y: h * (640 / 971))
-            let r = max(3, w * 0.006)
-            ctx.fill(Path(ellipseIn: CGRect(x: hub.x - r, y: hub.y - r, width: r * 2, height: r * 2)),
-                     with: .color(Palette.cyan.opacity(0.9)))
         }
-    }
-}
-
-// MARK: - 能流路径（与 HA 面板 SVG 同源）
-
-enum FlowShape {
-    case pv, load, battery, grid
-
-    func path(in size: CGSize) -> Path {
-        let sx = size.width / 1617
-        let sy = size.height / 971
-        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
-            CGPoint(x: x * sx, y: y * sy)
-        }
-
-        var path = Path()
-        switch self {
-        case .pv:
-            path.move(to: p(470, 580))
-            path.addCurve(to: p(995, 640), control1: p(625, 575), control2: p(770, 645))
-        case .load:
-            path.move(to: p(1010, 627))
-            path.addCurve(to: p(910, 365), control1: p(978, 548), control2: p(935, 455))
-        case .battery:
-            path.move(to: p(995, 655))
-            path.addCurve(to: p(735, 765), control1: p(905, 690), control2: p(820, 730))
-        case .grid:
-            path.move(to: p(1390, 510))
-            path.addCurve(to: p(1025, 640), control1: p(1280, 540), control2: p(1160, 610))
-        }
-        return path
     }
 }
 
