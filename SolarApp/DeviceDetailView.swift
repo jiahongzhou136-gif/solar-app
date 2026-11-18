@@ -299,7 +299,7 @@ struct DeviceDetailView: View {
             detail = fresh
             errorText = nil
         } catch {
-            errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            errorText = HAError.describe(error)
         }
     }
 }

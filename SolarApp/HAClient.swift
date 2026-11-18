@@ -31,10 +31,20 @@ enum SolarConfig {
         prefix + "inverter_status_raw",                // 18
         prefix + "inverter_warning_code_raw",          // 19
         "sun.sun",                                     // 20（夜间判定，与面板同源）
+        // 21：未来数小时天气状况，用于「预计多久有雨」
+        "raw:" + SolarConfig.forecastConditionsRaw,
     ]
 
+    /// 取天气实体的逐时预报状况（缺失时返回空串，前端自动隐藏该文案）
+    static let forecastConditionsRaw =
+        "{% set f = state_attr('weather.forecast_wo_de_jia','forecast') %}{{ (f[:4] | map(attribute='condition') | join(',')) if f else '' }}"
+
     static func template(_ ids: [String]) -> String {
-        ids.map { "{{ states('\($0)') }}" }.joined(separator: "|")
+        ids.map { id in
+            id.hasPrefix("raw:")
+                ? "{{ \(id.dropFirst(4)) }}"
+                : "{{ states('\(id)') }}"
+        }.joined(separator: "|")
     }
 }
 
@@ -60,28 +70,81 @@ enum HAError: LocalizedError {
         case .unexpectedBody(let s): return "返回内容异常：\(s)"
         }
     }
+
+    /// 统一把底层错误转成中文可读文案，绝不把 NSURLErrorDomain 之类的原始串抛给用户
+    static func describe(_ error: Error) -> String {
+        if let e = error as? HAError {
+            return e.errorDescription ?? "读取失败"
+        }
+        let ns = error as NSError
+        if ns.domain == NSURLErrorDomain {
+            switch ns.code {
+            case NSURLErrorTimedOut:              return "连接超时，HA 没有响应"
+            case NSURLErrorCannotConnectToHost:   return "无法连接到 HA，检查地址与端口"
+            case NSURLErrorCannotFindHost:        return "找不到主机，域名解析失败"
+            case NSURLErrorNetworkConnectionLost: return "网络中断，正在重连"
+            case NSURLErrorNotConnectedToInternet: return "设备未联网"
+            case NSURLErrorCancelled:             return "请求已取消"
+            default:                              return "网络请求失败（\(ns.code)）"
+            }
+        }
+        if ns.domain.contains("Network") || ns.domain.contains("NWError") {
+            return "网络连接失败，检查 HA 地址与局域网"
+        }
+        return "读取失败"
+    }
+}
+
+// MARK: - 数值合理性
+
+/// 网关偶发返回 uint32 越界值（例如电池充电功率 429,496,544 W），
+/// 这里按物理量程做兜底，超范围一律视为无效值（显示 --），与面板 POWER_LIMITS 同思路。
+enum Sanity {
+    static func check(_ value: Double, unit: String) -> Double? {
+        guard value.isFinite else { return nil }
+        switch unit {
+        case "W":            return abs(value) <= 30_000 ? value : nil
+        case "V":            return (0...1_000).contains(value) ? value : nil
+        case "A":            return abs(value) <= 500 ? value : nil
+        case "%":            return (0...100).contains(value) ? value : nil
+        case "°C":           return (-50...150).contains(value) ? value : nil
+        case "kWh":          return (0...10_000_000).contains(value) ? value : nil
+        case "Ah":           return (0...100_000).contains(value) ? value : nil
+        case "次":           return (0...1_000_000).contains(value) ? value : nil
+        default:             return abs(value) <= 10_000_000 ? value : nil
+        }
+    }
 }
 
 // MARK: - 天气
 
+/// 只描述天气本身；昼夜是独立维度（SolarData.isNight），不参与天气判定
 enum WeatherKind: String {
-    case sunny, cloudy, rain, night
+    case sunny, cloudy, rain
 
     var imageName: String {
         switch self {
         case .sunny:  return "WeatherSunny"
         case .cloudy: return "WeatherCloudy"
         case .rain:   return "WeatherRain"
-        case .night:  return "WeatherNight"
         }
     }
 
+    /// 白天符号
     var symbol: String {
         switch self {
         case .sunny:  return "sun.max.fill"
         case .cloudy: return "cloud.fill"
         case .rain:   return "cloud.rain.fill"
-        case .night:  return "moon.stars.fill"
+        }
+    }
+
+    /// 夜间符号：天气不变，只换图标形态
+    var nightSymbol: String {
+        switch self {
+        case .sunny:  return "moon.stars.fill"
+        case .cloudy: return "cloud.moon.fill"
+        case .rain:   return "cloud.moon.rain.fill"
         }
     }
 
@@ -90,16 +153,13 @@ enum WeatherKind: String {
         case .sunny:  return "晴"
         case .cloudy: return "多云"
         case .rain:   return "有雨"
-        case .night:  return "夜间"
         }
     }
 
     static func from(_ raw: String) -> WeatherKind {
         let s = raw.lowercased()
-        if s.contains("night") {
-            return (s.contains("rain") || s.contains("pouring") || s.contains("lightning")) ? .rain : .night
-        }
-        if s.contains("rain") || s.contains("pouring") || s.contains("lightning") || s.contains("snow") {
+        if s.contains("rain") || s.contains("pouring") || s.contains("lightning")
+            || s.contains("snow") || s.contains("hail") {
             return .rain
         }
         if s.contains("sunny") || s.contains("clear") {
@@ -126,13 +186,14 @@ enum DeviceKind: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    var icon: String {
+    /// 与 HA 面板完全一致的图标
+    var icon: HAIcon {
         switch self {
-        case .pv1:      return "sun.max.fill"
-        case .inverter: return "bolt.horizontal.circle.fill"
-        case .battery:  return "battery.75percent"
-        case .grid:     return "powerplug.fill"
-        case .load:     return "house.fill"
+        case .pv1:      return .solar
+        case .inverter: return .inverter
+        case .battery:  return .battery
+        case .grid:     return .grid
+        case .load:     return .home
         }
     }
 
@@ -293,10 +354,30 @@ struct SolarData: Equatable {
     var inverterStatus: String
     var warningCode: String
     var sunState: String
+    var forecastConditions: String
     var rawPreview: String
     var updatedAt: Date
 
     var weather: WeatherKind { WeatherKind.from(weatherRaw) }
+
+    /// 与面板一致的降雨预报文案；取不到逐时预报时返回 nil，前端不显示
+    var rainSoonText: String? {
+        let items = forecastConditions
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+            .filter { !$0.isEmpty }
+        guard !items.isEmpty else { return nil }
+
+        func isWet(_ c: String) -> Bool {
+            c.contains("rain") || c.contains("pouring") || c.contains("lightning")
+                || c.contains("snow") || c.contains("hail") || c.contains("shower")
+        }
+
+        if let idx = items.firstIndex(where: isWet) {
+            return idx == 0 ? "即将有雨" : "约 \(idx + 1) 小时后有雨"
+        }
+        return "未来 \(min(items.count, 3)) 小时无雨"
+    }
 
     /// 与 HA 面板一致：优先 sun.sun，取不到时用本地时间兜底
     var isNight: Bool {
@@ -337,31 +418,36 @@ struct SolarData: Equatable {
             let raw = parts[i]
             return (raw == "unknown" || raw == "unavailable") ? "" : raw
         }
+        // 按物理量程过滤越界值
+        func meter(_ i: Int, _ unit: String) -> Double? {
+            num(i).flatMap { Sanity.check($0, unit: unit) }
+        }
 
         let preview = text.count > 120 ? String(text.prefix(120)) + "…" : text
 
         return SolarData(
-            pv1: num(0),
-            pv1Voltage: num(1),
-            pv1Current: num(2),
-            pvTotal: num(3),
-            load: num(4),
-            soc: num(5),
-            charge: num(6),
-            discharge: num(7),
-            grid: num(8),
-            dailyCharge: num(9),
-            dailyDischarge: num(10),
-            dailyPv: num(11),
-            totalPv: num(12),
-            forecastToday: num(13),
-            forecastRemaining: num(14),
-            forecastTomorrow: num(15),
+            pv1: meter(0, "W"),
+            pv1Voltage: meter(1, "V"),
+            pv1Current: meter(2, "A"),
+            pvTotal: meter(3, "W"),
+            load: meter(4, "W"),
+            soc: meter(5, "%"),
+            charge: meter(6, "W"),
+            discharge: meter(7, "W"),
+            grid: meter(8, "W"),
+            dailyCharge: meter(9, "kWh"),
+            dailyDischarge: meter(10, "kWh"),
+            dailyPv: meter(11, "kWh"),
+            totalPv: meter(12, "kWh"),
+            forecastToday: meter(13, "kWh"),
+            forecastRemaining: meter(14, "kWh"),
+            forecastTomorrow: meter(15, "kWh"),
             weatherRaw: str(16),
-            inverterTemp: num(17),
+            inverterTemp: meter(17, "°C"),
             inverterStatus: str(18),
             warningCode: str(19),
             sunState: str(20),
+            forecastConditions: str(21),
             rawPreview: preview,
             updatedAt: Date()
         )
@@ -373,7 +459,7 @@ struct SolarData: Equatable {
         dailyCharge: nil, dailyDischarge: nil, dailyPv: nil, totalPv: nil,
         forecastToday: nil, forecastRemaining: nil, forecastTomorrow: nil,
         weatherRaw: "", inverterTemp: nil, inverterStatus: "", warningCode: "",
-        sunState: "",
+        sunState: "", forecastConditions: "",
         rawPreview: "", updatedAt: Date(timeIntervalSince1970: 0)
     )
 }
@@ -494,14 +580,17 @@ struct HAClient {
         for group in groups {
             var rows: [(String, String)] = []
             for field in group.fields {
-                // 1) 先读主实体；2) 缺失时按规则从备用实体派生
-                var value = number(field.entity)
-                if value == nil, let src = field.deriveFrom, let base = number(src) {
-                    switch field.derive {
-                    case .none:        break
-                    case .fallback:    value = base
-                    case .importPower: value = max(base, 0)
-                    case .exportPower: value = max(-base, 0)
+                // 1) 先读主实体；2) 缺失时按规则从备用实体派生（两者都过量程校验）
+                var value = number(field.entity).flatMap { Sanity.check($0, unit: field.unit) }
+                if value == nil, let src = field.deriveFrom {
+                    let base = number(src).flatMap { Sanity.check($0, unit: "W") }
+                    if let base {
+                        switch field.derive {
+                        case .none:        break
+                        case .fallback:    value = base
+                        case .importPower: value = max(base, 0)
+                        case .exportPower: value = max(-base, 0)
+                        }
                     }
                 }
 
@@ -544,7 +633,7 @@ struct HAClient {
 
         var cells: [Double] = []
         for entity in kind.cellEntities {
-            if let v = number(entity) { cells.append(v) }
+            if let v = number(entity).flatMap({ Sanity.check($0, unit: "V") }) { cells.append(v) }
         }
 
         let note: String?

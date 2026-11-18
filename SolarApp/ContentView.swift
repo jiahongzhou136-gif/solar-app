@@ -125,6 +125,7 @@ struct ContentView: View {
     @State private var showSettings = false
     @State private var appeared = false
     @State private var selected: DeviceKind?
+    @State private var consecutiveFailures = 0
     @Namespace private var zoomNS
 
     private var configured: Bool {
@@ -239,17 +240,14 @@ struct ContentView: View {
         return VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .top) {
                     iconBadge(kind.icon)
-                    Spacer(minLength: 4)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.white.opacity(0.42))
+                    Spacer(minLength: 0)
                 }
 
-                Spacer(minLength: 7)
+                Spacer(minLength: 12)
 
                 Text(kind.title)
                     .font(Design.label)
-                    .foregroundStyle(Palette.label)
+                    .foregroundStyle(Palette.text.opacity(0.92))
                 Text(value)
                     .font(Design.cardValue)
                     .foregroundStyle(Palette.text)
@@ -258,36 +256,27 @@ struct ContentView: View {
                     .minimumScaleFactor(0.66)
                 Text(footnote)
                     .font(Design.caption)
-                    .foregroundStyle(Palette.sub)
+                    .foregroundStyle(Palette.text.opacity(0.72))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
-                    .padding(.top, 1)
+                    .padding(.top, 2)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 11)
-            .frame(maxWidth: .infinity, minHeight: 118, alignment: .leading)
-        .contentShape(RoundedRectangle(cornerRadius: Design.cardRadius, style: .continuous))
-        .modifier(GlassCard(radius: Design.cardRadius))
-        .onTapGesture {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            selected = kind
-        }
-        .matchedTransitionSource(id: kind.id, in: zoomNS)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 13)
+            .frame(maxWidth: .infinity, minHeight: 132, alignment: .leading)
+            .contentShape(RoundedRectangle(cornerRadius: Design.cardRadius, style: .continuous))
+            .modifier(GlassCard(radius: Design.cardRadius))
+            .onTapGesture {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                selected = kind
+            }
+            .matchedTransitionSource(id: kind.id, in: zoomNS)
     }
 
-    private func iconBadge(_ name: String) -> some View {
-        Image(systemName: name)
-            .font(.system(size: 15, weight: .medium))
-            .foregroundStyle(Palette.text)
-            .frame(width: 32, height: 32)
-            .background(
-                Color.white.opacity(0.10),
-                in: RoundedRectangle(cornerRadius: Design.iconRadius, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Design.iconRadius, style: .continuous)
-                    .stroke(Color.white.opacity(0.16), lineWidth: 0.6)
-            )
+    private func iconBadge(_ icon: HAIcon) -> some View {
+        icon.body
+            .foregroundStyle(.white)
+            .frame(width: 30, height: 30)
     }
 
     private func summary(for kind: DeviceKind) -> (String, String) {
@@ -318,17 +307,14 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(alignment: .top) {
                         iconBadge(DeviceKind.battery.icon)
-                        Spacer(minLength: 4)
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Color.white.opacity(0.42))
+                        Spacer(minLength: 0)
                     }
 
-                    Spacer(minLength: 7)
+                    Spacer(minLength: 12)
 
                     Text("储能电池")
                         .font(Design.label)
-                        .foregroundStyle(Palette.label)
+                        .foregroundStyle(Palette.text.opacity(0.92))
                     Text(batteryHeadline)
                         .font(Design.cardValue)
                         .foregroundStyle(Palette.text)
@@ -337,19 +323,19 @@ struct ContentView: View {
                         .minimumScaleFactor(0.66)
                     Text(batterySubline)
                         .font(Design.caption)
-                        .foregroundStyle(Palette.sub)
-                        .padding(.top, 1)
+                        .foregroundStyle(Palette.text.opacity(0.72))
+                        .padding(.top, 2)
                 }
 
                 Spacer(minLength: 0)
 
                 BatteryGlyph(soc: data.soc, charging: (data.batteryPower ?? 0) > 20)
-                    .frame(width: 62, height: 96)
+                    .frame(width: 66, height: 100)
                     .padding(.trailing, 4)
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 11)
-            .frame(maxWidth: .infinity, minHeight: 134, alignment: .leading)
+            .padding(.vertical, 13)
+            .frame(maxWidth: .infinity, minHeight: 132, alignment: .leading)
         .contentShape(RoundedRectangle(cornerRadius: Design.rowRadius, style: .continuous))
         .modifier(GlassCard(radius: Design.rowRadius))
         .onTapGesture {
@@ -376,16 +362,16 @@ struct ContentView: View {
     // MARK: 今日能量
 
     private var energyCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("今日能量")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Palette.text)
+                .font(Design.label)
+                .foregroundStyle(Palette.text.opacity(0.92))
 
             LazyVGrid(
                 columns: [GridItem(.flexible(), spacing: 12),
                           GridItem(.flexible(), spacing: 12)],
                 alignment: .leading,
-                spacing: 10
+                spacing: 12
             ) {
                 energyItem("日充电", Fmt.kwh(data.dailyCharge, digits: 2))
                 energyItem("日放电", Fmt.kwh(data.dailyDischarge, digits: 2))
@@ -393,19 +379,19 @@ struct ContentView: View {
                 energyItem("累计发电", Fmt.kwh(data.totalPv, digits: 1))
             }
         }
-        .padding(.horizontal, 15)
+        .padding(.horizontal, 14)
         .padding(.vertical, 13)
         .frame(maxWidth: .infinity, alignment: .leading)
         .modifier(GlassCard(radius: Design.rowRadius))
     }
 
     private func energyItem(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(label)
-                .font(.system(size: 11))
-                .foregroundStyle(Palette.rowLabel)
+                .font(Design.caption)
+                .foregroundStyle(Palette.text.opacity(0.78))
             Text(value)
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .font(.system(size: 19, weight: .semibold, design: .rounded))
                 .foregroundStyle(Palette.text)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -469,11 +455,17 @@ struct ContentView: View {
                 data = fresh
                 errorText = nil
             }
+            consecutiveFailures = 0
             if haptic {
                 UIImpactFeedbackGenerator(style: .soft).impactOccurred()
             }
         } catch {
-            errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            consecutiveFailures += 1
+            errorText = HAError.describe(error)
+            // 连续失败后清空旧读数，避免长期停在固定数字误导
+            if consecutiveFailures >= 3, !data.isEmptyReading {
+                withAnimation(Design.snappy) { data = .empty }
+            }
         }
     }
 }
@@ -485,15 +477,26 @@ struct GlassCard: ViewModifier {
 
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
-            // .clear 比 .regular 通透：不做强磨砂，保留背景可读性
+            // iOS 27 液态玻璃：轻微深色 tint 让浅色天气背景上的文字保持可读，
+            // 同时保留折射与边缘高光，避免"雾蒙蒙"的磨砂感。
             content.glassEffect(
-                .clear.tint(Color.white.opacity(0.06)),
+                .regular.tint(Color(hex: 0x0A1C2B).opacity(0.30)),
                 in: RoundedRectangle(cornerRadius: radius, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.34), Color.white.opacity(0.05)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 0.8
+                    )
             )
         } else {
             content
                 .background(
-                    .ultraThinMaterial,
+                    Color(hex: 0x081725).opacity(0.55),
                     in: RoundedRectangle(cornerRadius: radius, style: .continuous)
                 )
                 .overlay(
@@ -588,7 +591,7 @@ struct WeatherBackdrop: View {
     @State private var moonPulse: CGFloat = 0.86
 
     private var imageName: String {
-        isNight ? WeatherKind.night.imageName : kind.imageName
+        isNight ? "WeatherNight" : kind.imageName
     }
 
     var body: some View {
@@ -611,7 +614,7 @@ struct WeatherBackdrop: View {
                 }
                 if kind == .rain { RainLayer().allowsHitTesting(false) }
 
-                Clouds(size: geo.size, kind: isNight ? .night : kind)
+                Clouds(size: geo.size, kind: kind, isNight: isNight)
 
                 LinearGradient(
                     colors: isNight
@@ -699,21 +702,25 @@ struct WeatherBackdrop: View {
 private struct Clouds: View {
     let size: CGSize
     let kind: WeatherKind
+    var isNight: Bool = false
 
     private var baseOpacity: Double {
+        if isNight { return 0.40 }
         switch kind {
-        case .sunny:  return 0.26
-        case .cloudy: return 0.72
-        case .rain:   return 0.42
-        case .night:  return 0.34
+        case .sunny:  return 0.30
+        case .cloudy: return 0.82
+        case .rain:   return 0.52
         }
     }
 
+    private var dark: Bool { isNight || kind == .rain }
+
     var body: some View {
         ZStack {
-            DriftBlob(y: 0.06, widthRatio: 0.86, duration: 22, delay: 0, shift: 0.42, opacity: baseOpacity, dark: kind == .rain)
-            DriftBlob(y: 0.26, widthRatio: 0.70, duration: 28, delay: -6, shift: -0.38, opacity: baseOpacity, dark: kind == .rain)
-            DriftBlob(y: 0.52, widthRatio: 0.92, duration: 34, delay: -12, shift: 0.46, opacity: baseOpacity, dark: kind == .rain)
+            DriftBlob(y: 0.04, widthRatio: 0.92, duration: 16, delay: 0, shift: 0.72, opacity: baseOpacity, dark: dark)
+            DriftBlob(y: 0.24, widthRatio: 0.78, duration: 21, delay: -6, shift: -0.68, opacity: baseOpacity, dark: dark)
+            DriftBlob(y: 0.50, widthRatio: 1.02, duration: 26, delay: -12, shift: 0.80, opacity: baseOpacity, dark: dark)
+            DriftBlob(y: 0.72, widthRatio: 0.66, duration: 19, delay: -9, shift: -0.55, opacity: baseOpacity * 0.7, dark: dark)
         }
         .frame(width: size.width, height: size.height)
         .allowsHitTesting(false)
@@ -745,12 +752,13 @@ private struct DriftBlob: View {
                     )
                 )
                 .frame(width: geo.size.width * widthRatio, height: geo.size.height * 0.22)
-                .blur(radius: 26)
+                .blur(radius: 14)
                 .opacity(opacity)
                 .offset(x: geo.size.width * (x - 0.42), y: geo.size.height * y)
                 .onAppear {
+                    // 用 .linear 而非 .easeInOut：后者每帧重算插值，120Hz 下开销大
                     withAnimation(
-                        .easeInOut(duration: duration)
+                        .linear(duration: duration)
                         .repeatForever(autoreverses: true)
                         .delay(delay)
                     ) {
@@ -836,10 +844,11 @@ struct LuminaHero: View {
             glow(.battery, active: activeBattery, w: w, h: h)
             glow(.grid, active: activeGrid, w: w, h: h)
 
-            pulse(.pv, active: activePV, w: w, h: h)
-            pulse(.load, active: activeLoad, w: w, h: h)
-            pulse(.battery, active: activeBattery, w: w, h: h)
-            pulse(.grid, active: activeGrid, w: w, h: h)
+            pulse(.pv, active: activePV, reverse: false, w: w, h: h)
+            pulse(.load, active: activeLoad, reverse: false, w: w, h: h)
+            // 电池放电时光流从电池回到逆变器；市电馈电时从逆变器流向市电
+            pulse(.battery, active: activeBattery, reverse: batteryDischarging, w: w, h: h)
+            pulse(.grid, active: activeGrid, reverse: gridExporting, w: w, h: h)
 
             Circle()
                 .fill(Palette.cyan.opacity(0.9))
@@ -853,11 +862,11 @@ struct LuminaHero: View {
 
     private func glow(_ route: FlowShape, active: Bool, w: CGFloat, h: CGFloat) -> some View {
         route.path(in: CGSize(width: w, height: h))
-            .stroke(Palette.cyan.opacity(active ? 0.32 : 0.10), lineWidth: max(5, w * 0.018))
-            .blur(radius: 4)
+            .stroke(Palette.cyan.opacity(active ? 0.26 : 0.08), lineWidth: max(5, w * 0.018))
+            .blur(radius: 2)
     }
 
-    private func pulse(_ route: FlowShape, active: Bool, w: CGFloat, h: CGFloat) -> some View {
+    private func pulse(_ route: FlowShape, active: Bool, reverse: Bool, w: CGFloat, h: CGFloat) -> some View {
         route.path(in: CGSize(width: w, height: h))
             .stroke(
                 LinearGradient(
@@ -869,7 +878,8 @@ struct LuminaHero: View {
                     lineWidth: max(1.6, w * 0.007),
                     lineCap: .round,
                     dash: [max(20, w * 0.18), max(26, w * 0.20)],
-                    dashPhase: dashPhase
+                    // dashPhase 取负即可让虚线沿路径反方向流动，等价于 HA 的 .reverse
+                    dashPhase: reverse ? -dashPhase : dashPhase
                 )
             )
             .opacity(active ? 0.95 : 0.30)
@@ -880,6 +890,8 @@ struct LuminaHero: View {
     private var activeLoad: Bool { (data.load ?? 0) > 20 }
     private var activeBattery: Bool { abs(data.batteryPower ?? 0) > 20 }
     private var activeGrid: Bool { abs(data.grid ?? 0) > 20 }
+    private var batteryDischarging: Bool { (data.discharge ?? 0) > (data.charge ?? 0) }
+    private var gridExporting: Bool { (data.grid ?? 0) < 0 }
 
     private var buoyText: CGFloat { 10 }
 
@@ -983,48 +995,45 @@ struct ForecastBar: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 9) {
-            Image(systemName: data.weather.symbol)
+            Image(systemName: data.isNight ? data.weather.nightSymbol : data.weather.symbol)
                 .font(.system(size: 19, weight: .regular))
                 .foregroundStyle(Palette.text)
                 .frame(width: 24)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 4) {
-                    Text("今日预计").foregroundStyle(Color(hex: 0xC2D6E4))
+                    Text("今日预计").foregroundStyle(Palette.text.opacity(0.82))
                     Text(Fmt.kwh(data.forecastToday))
                         .foregroundStyle(.white)
                         .fontWeight(.semibold)
-                    Text("剩余").foregroundStyle(Color(hex: 0xC2D6E4))
+                    Text("剩余").foregroundStyle(Palette.text.opacity(0.82))
                     Text(Fmt.kwh(data.forecastRemaining))
                         .foregroundStyle(.white)
                         .fontWeight(.semibold)
                 }
-                .font(.system(size: 13))
+                .font(.system(size: 14))
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
 
                 Text(secondLine)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color(hex: 0xC2D6E4))
-                    .lineLimit(1)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(Palette.text.opacity(0.88))
+                    .lineLimit(2)
                     .minimumScaleFactor(0.8)
             }
             .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 2)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .modifier(GlassCard(radius: Design.controlRadius))
     }
 
     private var secondLine: String {
-        var parts: [String] = [data.isNight ? "夜间" : data.weather.label]
-        if let t = data.forecastTomorrow {
-            parts.append("明日预计 \(Fmt.kwh(t))")
-        }
-        if let d = data.dailyPv, let f = data.forecastToday, f > 1 {
-            let pct = Int((min(d / f, 1) * 100).rounded())
-            parts.append("已完成 \(pct)%")
-        }
+        // 天气状态与昼夜解耦：夜间仍显示真实天气，不再把"多云"替换成"夜间"
+        var parts: [String] = [data.weather.label]
+        if let rain = data.rainSoonText { parts.append(rain) }
+        if let t = data.forecastTomorrow { parts.append("明日预计 \(Fmt.kwh(t))") }
         return parts.joined(separator: " · ")
     }
 }
