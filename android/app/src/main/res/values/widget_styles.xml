@@ -1,0 +1,33 @@
+<resources>
+    <style name="WidgetCell">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">match_parent</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:paddingStart">6dp</item>
+        <item name="android:paddingEnd">2dp</item>
+        <item name="android:gravity">center_vertical</item>
+    </style>
+
+    <style name="WidgetLabel">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">10sp</item>
+        <item name="android:textColor">@color/widget_label</item>
+        <item name="android:maxLines">1</item>
+    </style>
+
+    <style name="WidgetValue">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/widget_text</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:layout_marginTop">3dp</item>
+    </style>
+
+    <style name="WidgetValueAccent" parent="WidgetValue">
+        <item name="android:textColor">@color/widget_accent</item>
+    </style>
+</resources>

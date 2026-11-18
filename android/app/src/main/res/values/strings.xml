@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">光伏监控</string>
+    <string name="widget_desc">实时发电、今日发电与电池状态</string>
+</resources>

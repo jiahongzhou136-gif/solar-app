@@ -1,0 +1,26 @@
+<!-- 前景：青蓝闪电 + 光伏板条，白底（与 iOS 原方案一致的视觉基因） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 闪电（Material flash_on 24 系 ×3 缩放，中心偏上） -->
+    <path
+        android:pathData="M39,16 L39,55 L48,55 L48,82 L69,46 L57,46 L69,16 Z"
+        android:fillColor="#17A5D6"
+        android:strokeColor="#17A5D6"
+        android:strokeWidth="2.4"
+        android:strokeLineJoin="round" />
+    <!-- 光伏板条（圆角横条 + 两道白缝） -->
+    <path
+        android:pathData="M26,88 L82,88 Q88,88 88,91 L88,96 Q88,99 82,99 L26,99 Q20,99 20,96 L20,91 Q20,88 26,88 Z"
+        android:fillColor="#0C82B4" />
+    <path
+        android:pathData="M46,88 L46,99"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.6" />
+    <path
+        android:pathData="M62,88 L62,99"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.6" />
+</vector>

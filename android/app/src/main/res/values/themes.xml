@@ -1,0 +1,13 @@
+<resources>
+    <style name="Theme.Solar" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowBackground">#0B1118</item>
+    </style>
+
+    <color name="ic_bg">#FFFFFF</color>
+    <color name="widget_text">#F2F7FC</color>
+    <color name="widget_label">#CFDEEB</color>
+    <color name="widget_accent">#41F4FF</color>
+</resources>
