@@ -954,7 +954,6 @@ private struct FlowCanvas: View {
                             Gradient(colors: [Color(hex: 0x78F8FF), Color(hex: 0xD9FFFF), Color(hex: 0x44E5FF)]),
                             startPoint: .zero, endPoint: CGPoint(x: w, y: h)
                         ),
-                        lineWidth: max(1.6, w * 0.007),
                         style: StrokeStyle(
                             lineWidth: max(1.6, w * 0.007),
                             lineCap: .round,
