@@ -881,6 +881,8 @@ struct LuminaHero: View {
     private var batteryDischarging: Bool {
         (data.discharge ?? 0) > 0 && !((data.charge ?? 0) > 0)
     }
+    // 市电馈电：grid_power_raw 为负（面板 fallback 口径）
+    private var gridExporting: Bool { (data.grid ?? 0) < 0 }
 
     // 普通浮标：无底色白字（深色天气背景上），标签小字+数值大粗字
     private func houseBuoy(_ label: String, _ value: String, _ xf: CGFloat, _ yf: CGFloat,
