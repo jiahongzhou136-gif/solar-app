@@ -41,9 +41,8 @@ enum SolarConfig {
 
     static func template(_ ids: [String]) -> String {
         ids.map { id in
-            id.hasPrefix("raw:")
-                ? "{{ \(id.dropFirst(4)) }}"
-                : "{{ states('\(id)') }}"
+            // raw: 前缀是完整模板语句，不能再包 {{ }}，否则形成 {{ {% ... %} }} 导致 HA 返回 400
+            id.hasPrefix("raw:") ? String(id.dropFirst(4)) : "{{ states('\(id)') }}"
         }.joined(separator: "|")
     }
 }
