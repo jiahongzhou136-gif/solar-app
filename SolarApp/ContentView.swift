@@ -40,17 +40,16 @@ enum Palette {
     static let bg = Color(hex: 0x0B1118)
     static let accent = Color(hex: 0xF5A623)
     static let cyan = Color(hex: 0x41F4FF)
-    static let text = Color(hex: 0xF6FBFF)
-    /// 次要文字：说明、副行
-    static let dim = Color(hex: 0x9FB6C9)
+    /// 主数值：纯白，最高对比
+    static let text = Color(hex: 0xFFFFFF)
+    /// 卡片标题：近白，仍保持高对比
+    static let title = Color(hex: 0xE8F4FF)
+    /// 次要文字：副行、脚注。足够亮，避免浅背景不可读
+    static let dim = Color(hex: 0xD2E4F2)
     /// 三级文字：弱提示
-    static let sub = Color(hex: 0x8FA9BD)
-    /// 卡片标签（主界面设备名）
-    static let label = Color(hex: 0xA8C0D2)
-    /// 详情页字段标签
-    static let rowLabel = Color(hex: 0xA9C2D6)
+    static let sub = Color(hex: 0xB8D0E2)
     /// 错误标题
-    static let danger = Color(hex: 0xFF9B9B)
+    static let danger = Color(hex: 0xFFB4B4)
 }
 
 extension Color {
@@ -249,7 +248,7 @@ struct ContentView: View {
 
                 Text(kind.title)
                     .font(Design.label)
-                    .foregroundStyle(Palette.text.opacity(0.92))
+                    .foregroundStyle(Palette.title)
                 Text(value)
                     .font(Design.cardValue)
                     .foregroundStyle(Palette.text)
@@ -258,13 +257,12 @@ struct ContentView: View {
                     .minimumScaleFactor(0.66)
                 Text(footnote)
                     .font(Design.caption)
-                    .foregroundStyle(Palette.text.opacity(0.72))
+                    .foregroundStyle(Palette.dim)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                     .padding(.top, 2)
             }
             // 通透玻璃下靠文字投影保证浅色天气背景上的可读性
-            .shadow(color: Color.black.opacity(0.5), radius: 2, x: 0, y: 1)
             .padding(.horizontal, 14)
             .padding(.vertical, 13)
             .frame(maxWidth: .infinity, minHeight: 132, alignment: .leading)
@@ -321,7 +319,7 @@ struct ContentView: View {
 
                     Text("储能电池")
                         .font(Design.label)
-                        .foregroundStyle(Palette.text.opacity(0.92))
+                        .foregroundStyle(Palette.title)
                     Text(batteryHeadline)
                         .font(Design.cardValue)
                         .foregroundStyle(Palette.text)
@@ -330,7 +328,7 @@ struct ContentView: View {
                         .minimumScaleFactor(0.66)
                     Text(batterySubline)
                         .font(Design.caption)
-                        .foregroundStyle(Palette.text.opacity(0.72))
+                        .foregroundStyle(Palette.dim)
                         .padding(.top, 2)
                 }
 
@@ -340,7 +338,6 @@ struct ContentView: View {
                     .frame(width: 66, height: 100)
                     .padding(.trailing, 4)
             }
-            .shadow(color: Color.black.opacity(0.5), radius: 2, x: 0, y: 1)
             .padding(.horizontal, 14)
             .padding(.vertical, 13)
             .frame(maxWidth: .infinity, minHeight: 132, alignment: .leading)
@@ -375,7 +372,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("今日能量")
                 .font(Design.label)
-                .foregroundStyle(Palette.text.opacity(0.92))
+                .foregroundStyle(Palette.title)
 
             LazyVGrid(
                 columns: [GridItem(.flexible(), spacing: 12),
@@ -389,7 +386,6 @@ struct ContentView: View {
                 energyItem("累计发电", Fmt.kwh(data.totalPv, digits: 1))
             }
         }
-        .shadow(color: Color.black.opacity(0.5), radius: 2, x: 0, y: 1)
         .padding(.horizontal, 14)
         .padding(.vertical, 13)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -400,7 +396,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
                 .font(Design.caption)
-                .foregroundStyle(Palette.text.opacity(0.78))
+                .foregroundStyle(Palette.dim)
             Text(value)
                 .font(.system(size: 19, weight: .semibold, design: .rounded))
                 .foregroundStyle(Palette.text)
@@ -488,20 +484,27 @@ struct GlassCard: ViewModifier {
 
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
-            // iOS 26/27 水滴玻璃：.clear 不磨砂，靠背景折射 + 边缘高光呈现通透质感。
-            // .regular 是磨砂，会变成"毛玻璃"，这里绝不使用。
+            // 水滴玻璃：.clear 保留背景折射（不是磨砂），极淡深蓝 tint 只用于给白字垫对比，
+            // 浓度很低，不会变成毛玻璃；边缘用三段式高光模拟水滴镜面。
             content.glassEffect(
-                .clear.interactive(),
+                .clear.tint(Color(hex: 0x0C2438).opacity(0.16)),
+                in: RoundedRectangle(cornerRadius: radius, style: .continuous)
+            )
+            .background(
+                LinearGradient(
+                    colors: [Color(hex: 0x081826).opacity(0.10), Color(hex: 0x081826).opacity(0.34)],
+                    startPoint: .top, endPoint: .bottom
+                ),
                 in: RoundedRectangle(cornerRadius: radius, style: .continuous)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .strokeBorder(
                         LinearGradient(
-                            colors: [Color.white.opacity(0.55), Color.white.opacity(0.08), Color.white.opacity(0.28)],
+                            colors: [Color.white.opacity(0.62), Color.white.opacity(0.10), Color.white.opacity(0.30)],
                             startPoint: .topLeading, endPoint: .bottomTrailing
                         ),
-                        lineWidth: 1.1
+                        lineWidth: 1.2
                     )
             )
         } else {
@@ -729,61 +732,50 @@ private struct Clouds: View {
     private var dark: Bool { isNight || kind == .rain }
 
     var body: some View {
-        ZStack {
-            DriftBlob(y: 0.04, widthRatio: 0.92, duration: 18, delay: 0, shift: 0.55, opacity: baseOpacity, dark: dark)
-            DriftBlob(y: 0.28, widthRatio: 0.82, duration: 24, delay: -8, shift: -0.52, opacity: baseOpacity, dark: dark)
-            DriftBlob(y: 0.58, widthRatio: 1.02, duration: 29, delay: -15, shift: 0.60, opacity: baseOpacity * 0.8, dark: dark)
+        // 三层云合并到一个 Canvas、12fps，避免 3 个 withAnimation 在滚动时持续合成
+        TimelineView(.animation(minimumInterval: 1.0 / 12)) { timeline in
+            Canvas { ctx, s in
+                let t = timeline.date.timeIntervalSinceReferenceDate
+                let layers: [(CGFloat, CGFloat, Double, Double, CGFloat)] = [
+                    (0.04, 0.92, 18, 0, 0.55),
+                    (0.28, 0.82, 24, -8, -0.52),
+                    (0.58, 1.02, 29, -15, 0.60),
+                ]
+                for (idx, layer) in layers.enumerated() {
+                    let (yP, wR, dur, delay, shift) = layer
+                    let period = dur * 2
+                    let raw = (t / period + Double(delay) / period).truncatingRemainder(dividingBy: 1)
+                    let tri = 1 - abs(raw * 2 - 1)          // 0→1→0 往复
+                    let x = (tri - 0.5) * shift * s.width
+                    let cw = s.width * wR
+                    let ch = s.height * 0.22
+                    let rect = CGRect(x: x + (s.width - cw) / 2, y: s.height * yP - ch / 2,
+                                      width: cw, height: ch)
+                    let colors = dark
+                        ? [Color(hex: 0x738A9B).opacity(0.72), Color(hex: 0x274057).opacity(0.35), Color.clear]
+                        : [Color(hex: 0xFAFDFF).opacity(0.82), Color(hex: 0xCAE1EB).opacity(0.34), Color.clear]
+                    ctx.fill(
+                        Path(ellipseIn: rect),
+                        with: .radialGradient(
+                            Gradient(colors: colors),
+                            center: CGPoint(x: rect.midX, y: rect.midY),
+                            startRadius: 8,
+                            endRadius: cw * 0.5
+                        )
+                    )
+                    _ = idx
+                }
+            }
         }
+        .opacity(baseOpacity)
         .frame(width: size.width, height: size.height)
         .allowsHitTesting(false)
     }
 }
 
-private struct DriftBlob: View {
-    let y: CGFloat
-    let widthRatio: CGFloat
-    let duration: Double
-    let delay: Double
-    let shift: CGFloat
-    let opacity: Double
-    let dark: Bool
-
-    @State private var x: CGFloat = 0
-
-    var body: some View {
-        GeometryReader { geo in
-            Ellipse()
-                .fill(
-                    RadialGradient(
-                        colors: dark
-                            ? [Color(hex: 0x738A9B).opacity(0.72), Color(hex: 0x274057).opacity(0.35), .clear]
-                            : [Color(hex: 0xFAFDFF).opacity(0.82), Color(hex: 0xCAE1EB).opacity(0.34), .clear],
-                        center: .center,
-                        startRadius: 8,
-                        endRadius: geo.size.width * widthRatio * 0.5
-                    )
-                )
-                .frame(width: geo.size.width * widthRatio, height: geo.size.height * 0.22)
-                // RadialGradient 本身已足够柔和，去掉 blur 省一层离屏合成
-                .opacity(opacity)
-                .offset(x: geo.size.width * (x - 0.42), y: geo.size.height * y)
-                .onAppear {
-                    // 用 .linear 而非 .easeInOut：后者每帧重算插值，120Hz 下开销大
-                    withAnimation(
-                        .linear(duration: duration)
-                        .repeatForever(autoreverses: true)
-                        .delay(delay)
-                    ) {
-                        x = shift + 0.42
-                    }
-                }
-        }
-    }
-}
-
 private struct RainLayer: View {
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+        TimelineView(.animation(minimumInterval: 1.0 / 12)) { timeline in
             Canvas { ctx, size in
                 let t = timeline.date.timeIntervalSinceReferenceDate
                 for i in 0..<64 {
@@ -818,9 +810,9 @@ struct LuminaHero: View {
             let h = geo.size.height
 
             ZStack {
+                // 按卡片宽高铺满（非等比裁切），与能流线/浮标的坐标映射严格一致
                 Image("LuminaEntities")
                     .resizable()
-                    .scaledToFill()
                     .frame(width: w, height: h)
                     .clipped()
                     .opacity(0.98)
@@ -834,7 +826,8 @@ struct LuminaHero: View {
             }
             .frame(width: w, height: h)
         }
-        .aspectRatio(boxW / boxH, contentMode: .fit)
+        // 增高全景卡，解决「脚重头轻」：浮标与能流线按百分比/w-h 缩放，会随卡片同步放大
+        .aspectRatio(1.42, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: Design.rowRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: Design.rowRadius, style: .continuous)
@@ -848,7 +841,8 @@ struct LuminaHero: View {
     /// 能流完全由 TimelineView 驱动：只有有功率的线路才推进相位。
     /// 相比 4 个 repeatForever + withAnimation，滚动时不会反复触发隐式动画。
     private func flows(w: CGFloat, h: CGFloat) -> some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+        // 12fps 足够呈现流动感；降低频率可显著减少滚动时的 Canvas 重建
+        TimelineView(.animation(minimumInterval: 1.0 / 12)) { timeline in
             FlowCanvas(
                 w: w, h: h,
                 phase: timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1000) * 64,
@@ -990,7 +984,9 @@ private struct FlowCanvas: View {
                             lineWidth: max(1.6, w * 0.007),
                             lineCap: .round,
                             dash: [max(20, w * 0.18), max(26, w * 0.20)],
-                            dashPhase: reverse ? CGFloat(-phase) : CGFloat(phase)
+                            // HA: Forward = dashoffset 0→-1000（沿路径起点→终点流动），
+                            // Reverse = 0→+1000。phase 是递增正值，故正向取负、反向取正。
+                            dashPhase: reverse ? CGFloat(phase) : CGFloat(-phase)
                         )
                     )
                 } else {
@@ -1051,11 +1047,11 @@ struct ForecastBar: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 4) {
-                    Text("今日预计").foregroundStyle(Palette.text.opacity(0.82))
+                    Text("今日预计").foregroundStyle(Palette.dim)
                     Text(Fmt.kwh(data.forecastToday))
                         .foregroundStyle(.white)
                         .fontWeight(.semibold)
-                    Text("剩余").foregroundStyle(Palette.text.opacity(0.82))
+                    Text("剩余").foregroundStyle(Palette.dim)
                     Text(Fmt.kwh(data.forecastRemaining))
                         .foregroundStyle(.white)
                         .fontWeight(.semibold)
@@ -1066,7 +1062,7 @@ struct ForecastBar: View {
 
                 Text(secondLine)
                     .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(Palette.text.opacity(0.88))
+                    .foregroundStyle(Palette.dim)
                     .lineLimit(2)
                     .minimumScaleFactor(0.8)
             }

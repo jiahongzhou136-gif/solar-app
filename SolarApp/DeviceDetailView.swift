@@ -112,7 +112,7 @@ struct DeviceDetailView: View {
                     .foregroundStyle(Palette.text)
                 Text(kind.desc)
                     .font(.system(size: 12))
-                    .foregroundStyle(Palette.rowLabel)
+                    .foregroundStyle(Palette.dim)
             }
             Spacer(minLength: 8)
             Button {
@@ -146,7 +146,7 @@ struct DeviceDetailView: View {
                             .foregroundStyle(active ? Color(hex: 0x0A2639) : Color(hex: 0xDCECF8))
                         Text(subtitle(for: section.title))
                             .font(.system(size: 9.5))
-                            .foregroundStyle(active ? Color(hex: 0x38566B) : Palette.rowLabel)
+                            .foregroundStyle(active ? Color(hex: 0x38566B) : Palette.dim)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 11)
@@ -183,7 +183,7 @@ struct DeviceDetailView: View {
                 HStack(spacing: 12) {
                     Text(item.0)
                         .font(.system(size: 13))
-                        .foregroundStyle(Palette.rowLabel)
+                        .foregroundStyle(Palette.dim)
                     Spacer(minLength: 8)
                     Text(item.1)
                         .font(.system(size: 13.5, weight: .semibold, design: .rounded))
@@ -218,7 +218,7 @@ struct DeviceDetailView: View {
                 if let maxV = cells.max(), let minV = cells.min() {
                     Text(String(format: "压差 %.3f V", maxV - minV))
                         .font(.system(size: 11))
-                        .foregroundStyle(Palette.rowLabel)
+                        .foregroundStyle(Palette.dim)
                 }
             }
 

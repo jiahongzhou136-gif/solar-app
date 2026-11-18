@@ -172,12 +172,16 @@ struct SolarWidgetEntryView: View {
     }
 
     private var needSetup: some View {
-        VStack(spacing: 6) {
-            Image(systemName: "sun.max.fill").font(.title).foregroundStyle(.white)
-            Text("请先在 App 内配置 HA 地址和令牌").font(.caption).foregroundStyle(.white.opacity(0.8))
+        VStack(spacing: 5) {
+            Image(systemName: "sun.max.fill").font(.title2).foregroundStyle(.white)
+            Text("小组件未读到配置").font(.caption.weight(.semibold)).foregroundStyle(.white)
+            Text("打开一次 SolarApp，确认地址和令牌已保存后，再回来添加小组件")
+                .font(.caption2).foregroundStyle(.white.opacity(0.75))
                 .multilineTextAlignment(.center)
+            Text("地址:\(SharedConfig.url.isEmpty ? "无" : "有") 令牌:\(SharedConfig.token.isEmpty ? "无" : "有")")
+                .font(.caption2).foregroundStyle(.white.opacity(0.55))
         }
-        .padding()
+        .padding(10)
     }
 
     private var smallView: some View {
