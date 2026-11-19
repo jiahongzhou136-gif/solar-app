@@ -947,25 +947,25 @@ private struct HouseFlowCanvas: View {
 
             // ① 屋顶光伏板 → 逆变器（竖直，发电时播放）
             if pvActive {
-                FlowGIF(name: "FlowVertical", tint: FlowTint.cyan, reverse: false)
+                FlowGIF(name: "flow_vertical", tint: FlowTint.cyan, reverse: false)
                     .frame(width: w * 0.062, height: h * 0.105)
                     .position(x: w * 0.461, y: h * 0.402)
             }
             // ② 表箱 → 逆变器（水平，取电播放；馈电反向）
             if gridActive {
-                FlowGIF(name: "FlowHorizontal", tint: FlowTint.cyan, reverse: gridReverse)
+                FlowGIF(name: "flow_horizontal", tint: FlowTint.cyan, reverse: gridReverse)
                     .frame(width: w * 0.370, height: w * 0.370 * (80.0 / 305.0))
                     .position(x: w * 0.368, y: h * 0.527)
             }
             // ③ 逆变器 → 电池柜（水平，充放播放；放电反向）
             if batteryActive {
-                FlowGIF(name: "FlowHorizontal", tint: FlowTint.cyan, reverse: batteryReverse)
+                FlowGIF(name: "flow_horizontal", tint: FlowTint.cyan, reverse: batteryReverse)
                     .frame(width: w * 0.185, height: w * 0.185 * (80.0 / 305.0))
                     .position(x: w * 0.563, y: h * 0.637)
             }
             // ④ 逆变器 → 建筑（竖直，供电时播放）—— 雷凌里这条是竖直的
             if loadActive {
-                FlowGIF(name: "FlowVertical", tint: FlowTint.cyan, reverse: false)
+                FlowGIF(name: "flow_vertical", tint: FlowTint.cyan, reverse: false)
                     .frame(width: w * 0.062, height: h * 0.120)
                     .position(x: w * 0.735, y: h * 0.500)
             }
@@ -996,8 +996,16 @@ private struct FlowGIF: UIViewRepresentable {
     func updateUIView(_ uiView: UIImageView, context: Context) {}
 
     static func tintedAnimatedImage(named: String, tint: UIColor, reverse: Bool) -> UIImage? {
-        guard let src = UIImage(named: named) else { return nil }
-        let frames = src.images ?? [src]
+        // 必须走 bundle 文件加载：Asset Catalog 会把 GIF 编译成静态图（只剩透明首帧）
+        guard let url = Bundle.main.url(forResource: named, withExtension: "gif"),
+              let data = try? Data(contentsOf: url),
+              let src = UIImage(data: data) else {
+            print("[FlowGIF] load failed: \(named).gif")
+            return nil
+        }
+        let all = src.images ?? [src]
+        // 雷凌 GIF 前两帧为清屏/碎片帧，跳过避免显示空白
+        let frames = all.count > 4 ? Array(all.dropFirst(2)) : all
         let duration = src.duration > 0 ? src.duration : Double(frames.count) * 0.04
         let tinted: [UIImage] = frames.map { frame in
             let size = frame.size
