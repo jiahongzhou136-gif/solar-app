@@ -913,7 +913,7 @@ struct LuminaHero: View {
     }
 }
 
-/// 引线虚线（静态灰白）+ 雷凌 GCD 流动线（GIF 逐帧染色直搬）
+/// 引线虚线（静态灰白）+ 雷凌流动线（PNG 帧序列直搬，预染色 #98F0F8）
 private struct HouseFlowCanvas: View {
     let w: CGFloat, h: CGFloat
     let gridActive: Bool
@@ -947,79 +947,71 @@ private struct HouseFlowCanvas: View {
 
             // ① 屋顶光伏板 → 逆变器（竖直，发电时播放）
             if pvActive {
-                FlowGIF(name: "flow_vertical", tint: FlowTint.cyan, reverse: false)
-                    .frame(width: w * 0.062, height: h * 0.105)
+                FlowFrames(prefix: "flowv", count: 45, reverse: false)
+                    .frame(width: w * 0.080, height: h * 0.160)
                     .position(x: w * 0.461, y: h * 0.402)
             }
-            // ② 表箱 → 逆变器（水平，取电播放；馈电反向）
+            // ② 表箱 → 逆变器（水平，两实例错位铺满；取电播放 / 馈电反向）
             if gridActive {
-                FlowGIF(name: "flow_horizontal", tint: FlowTint.cyan, reverse: gridReverse)
-                    .frame(width: w * 0.370, height: w * 0.370 * (80.0 / 305.0))
-                    .position(x: w * 0.368, y: h * 0.527)
+                FlowFrames(prefix: "flowh", count: 45, reverse: gridReverse)
+                    .frame(width: w * 0.185, height: h * 0.043)
+                    .position(x: w * 0.276, y: h * 0.527)
+                FlowFrames(prefix: "flowh", count: 45, reverse: gridReverse)
+                    .frame(width: w * 0.185, height: h * 0.043)
+                    .position(x: w * 0.459, y: h * 0.527)
             }
-            // ③ 逆变器 → 电池柜（水平，充放播放；放电反向）
+            // ③ 逆变器 → 电池柜（水平，充放播放 / 放电反向）
             if batteryActive {
-                FlowGIF(name: "flow_horizontal", tint: FlowTint.cyan, reverse: batteryReverse)
-                    .frame(width: w * 0.185, height: w * 0.185 * (80.0 / 305.0))
+                FlowFrames(prefix: "flowh", count: 45, reverse: batteryReverse)
+                    .frame(width: w * 0.182, height: h * 0.043)
                     .position(x: w * 0.563, y: h * 0.637)
             }
-            // ④ 逆变器 → 建筑（竖直，供电时播放）—— 雷凌里这条是竖直的
+            // ④ 逆变器 → 建筑（竖直，供电时播放）
             if loadActive {
-                FlowGIF(name: "flow_vertical", tint: FlowTint.cyan, reverse: false)
-                    .frame(width: w * 0.062, height: h * 0.120)
+                FlowFrames(prefix: "flowv", count: 45, reverse: false)
+                    .frame(width: w * 0.080, height: h * 0.180)
                     .position(x: w * 0.735, y: h * 0.500)
             }
         }
     }
 }
 
-enum FlowTint {
-    /// 雷凌截图实测浅青 #98F0F8
-    static let cyan = UIColor(red: 0.596, green: 0.941, blue: 0.973, alpha: 1)
-}
-
-/// 播放雷凌 GIF：逐帧按掩码染色（等价 Flutter 的 ColorFilter.srcIn），支持反向（水平翻转/垂直翻转）
-private struct FlowGIF: UIViewRepresentable {
-    let name: String
-    let tint: UIColor
-    /// true = 反向流动（通过水平翻转模拟）
+/// PNG 帧序列播放（最可靠：animationImages + startAnimating，不依赖 GIF 解析）
+private struct FlowFrames: UIViewRepresentable {
+    let prefix: String
+    let count: Int
     let reverse: Bool
 
     func makeUIView(context: Context) -> UIImageView {
         let iv = UIImageView()
         iv.contentMode = .scaleToFill
         iv.clipsToBounds = true
-        iv.image = Self.tintedAnimatedImage(named: name, tint: tint, reverse: reverse)
+        iv.animationRepeatCount = 0
+
+        var imgs: [UIImage] = []
+        for i in 0..<count {
+            let name = String(format: "%@_%02d", prefix, i)
+            if let path = Bundle.main.path(forResource: name, ofType: "png"),
+               let img = UIImage(contentsOfFile: path) {
+                imgs.append(img)
+            }
+        }
+        if imgs.count >= 2 {
+            iv.animationImages = imgs
+            // 雷凌帧延迟 40ms
+            iv.animationDuration = Double(imgs.count) * 0.04
+            iv.startAnimating()
+            print("[FlowFrames] \(prefix): \(imgs.count) frames, \(String(format: "%.2f", iv.animationDuration))s")
+        } else {
+            print("[FlowFrames] \(prefix): ONLY \(imgs.count) FRAMES — check Resources")
+        }
         return iv
     }
 
-    func updateUIView(_ uiView: UIImageView, context: Context) {}
-
-    static func tintedAnimatedImage(named: String, tint: UIColor, reverse: Bool) -> UIImage? {
-        // 必须走 bundle 文件加载：Asset Catalog 会把 GIF 编译成静态图（只剩透明首帧）
-        guard let url = Bundle.main.url(forResource: named, withExtension: "gif"),
-              let data = try? Data(contentsOf: url),
-              let src = UIImage(data: data) else {
-            print("[FlowGIF] load failed: \(named).gif")
-            return nil
-        }
-        let all = src.images ?? [src]
-        // 雷凌 GIF 前两帧为清屏/碎片帧，跳过避免显示空白
-        let frames = all.count > 4 ? Array(all.dropFirst(2)) : all
-        let duration = src.duration > 0 ? src.duration : Double(frames.count) * 0.04
-        let tinted: [UIImage] = frames.map { frame in
-            let size = frame.size
-            return UIGraphicsImageRenderer(size: size).image { ctx in
-                tint.set()
-                let rect = CGRect(origin: .zero, size: size)
-                if reverse {
-                    ctx.cgContext.translateBy(x: size.width, y: 0)
-                    ctx.cgContext.scaleBy(x: -1, y: 1)
-                }
-                frame.withRenderingMode(.alwaysTemplate).draw(in: rect)
-            }
-        }
-        return UIImage.animatedImage(with: tinted, duration: duration)
+    func updateUIView(_ uiView: UIImageView, context: Context) {
+        // 反向流动：水平翻转（竖直段/反向段都适用）
+        uiView.transform = reverse ? CGAffineTransform(scaleX: -1, y: 1) : .identity
+        if !uiView.isAnimating { uiView.startAnimating() }
     }
 }
 
