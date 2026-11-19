@@ -230,6 +230,13 @@ enum DeviceKind: String, CaseIterable, Identifiable, Hashable {
         var derive: Derive = .none
         /// 数值为 0 时改显示的文字（例如告警码「无」）
         var zeroText: String? = nil
+        /// 符号规则：chargePositive = 充电显示正、放电显示负（不依赖实体原始符号约定）
+        var signMode: SignMode = .none
+
+        enum SignMode {
+            case none
+            case chargePositive
+        }
 
         enum Derive {
             case none
@@ -297,14 +304,16 @@ enum DeviceKind: String, CaseIterable, Identifiable, Hashable {
                     .init(label: "充电功率", entity: p + "battery_charge_power", unit: "W", digits: 0),
                     .init(label: "放电功率", entity: p + "battery_discharge_power", unit: "W", digits: 0),
                     .init(label: "电压", entity: p + "battery_voltage", unit: "V", digits: 2),
-                    .init(label: "电流", entity: p + "battery_current", unit: "A", digits: 2),
+                    .init(label: "电流", entity: p + "battery_current", unit: "A", digits: 2,
+                          signMode: .chargePositive),
                     .init(label: "温度", entity: p + "battery_temperature", unit: "°C", digits: 1),
                     .init(label: "BMS 剩余容量", entity: p + "bms_remaining_capacity", unit: "Ah", digits: 2),
                 ]),
                 FieldGroup(title: "BMS 数据", fields: [
                     .init(label: "SOC", entity: p + "bms_soc", unit: "%", digits: 0),
                     .init(label: "总压", entity: p + "bms_pack_voltage", unit: "V", digits: 2),
-                    .init(label: "电流", entity: p + "bms_current", unit: "A", digits: 2),
+                    .init(label: "电流", entity: p + "bms_current", unit: "A", digits: 2,
+                          signMode: .chargePositive),
                     .init(label: "温度", entity: p + "bms_temperature_1", unit: "°C", digits: 1),
                     .init(label: "剩余容量", entity: p + "bms_remaining_capacity", unit: "Ah", digits: 1),
                     .init(label: "标称容量", entity: p + "bms_nominal_capacity", unit: "Ah", digits: 1),
@@ -634,7 +643,16 @@ struct HAClient {
                 }
 
                 let shown: String
-                if let v = value {
+                if let v0 = value {
+                    // 电池电流符号：充电为正、放电为负（实体原始约定可能相反，按充放状态强制）
+                    var v = v0
+                    if field.signMode == .chargePositive {
+                        let c = number(SolarConfig.prefix + "battery_charge_power") ?? 0
+                        let d = number(SolarConfig.prefix + "battery_discharge_power") ?? 0
+                        if c > 0 && d <= 0 { v = abs(v) }
+                        else if d > 0 && c <= 0 { v = -abs(v) }
+                        else { v = 0 }
+                    }
                     let mapped = field.textMap[rawValue(field.entity)] ?? ""
                     if let zero = field.zeroText, abs(v) < 0.0001 {
                         shown = zero

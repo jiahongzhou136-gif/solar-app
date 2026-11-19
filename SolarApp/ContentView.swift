@@ -813,7 +813,7 @@ struct LuminaHero: View {
                 // 建筑主体（透明底，中心对齐截图建筑位置）
                 Image("LuminaHouse")
                     .resizable()
-                    .frame(width: w * 0.88, height: w * 0.88 * (634.0 / 1038.0))
+                    .frame(width: w * 0.92, height: w * 0.92 * (634.0 / 1038.0))
                     .position(x: w * 0.48, y: h * 0.51)
 
                 // 引线虚线 + 青色流动段
@@ -832,21 +832,11 @@ struct LuminaHero: View {
                 // 六组浮标（位置按雷凌截图）
                 houseBuoy("电网", gridValue, 0.24, 0.075, w: w, h: h)
                 houseBuoy("光伏板", pvValue, 0.77, 0.050, w: w, h: h)
-                houseBubble("离网负载", loadValue, 0.70, 0.400, w: w, h: h)
+                houseBubble("离网负载", loadValue, 0.735, 0.398, w: w, h: h)
                 houseBuoy("网侧负载", "0 W", 0.24, 0.825, w: w, h: h)
                 houseBuoy("发电机", "0 W", 0.47, 0.832, w: w, h: h)
                 houseBuoy("电池", batteryValue, 0.77, 0.765, w: w, h: h)
 
-                // 底部分页指示器（单页样式）
-                HStack(spacing: 6) {
-                    Capsule()
-                        .fill(Color.white.opacity(0.92))
-                        .frame(width: 26, height: 6)
-                    Circle()
-                        .fill(Color.white.opacity(0.35))
-                        .frame(width: 6, height: 6)
-                }
-                .position(x: w * 0.5, y: h * 0.962)
             }
         }
         .aspectRatio(1024.0 / 1080.0, contentMode: .fit)
@@ -936,22 +926,27 @@ private struct HouseFlowCanvas: View {
     // 静态竖虚线引线（x1,y1,x2,y2 组件比例；按雷凌截图标定）
     private var dashedLines: [(CGFloat, CGFloat, CGFloat, CGFloat)] {
         [
-            (0.215, 0.105, 0.215, 0.245),  // 电网 → 屋顶左上方
-            (0.730, 0.080, 0.730, 0.245),  // 光伏板 → 屋顶右上方
-            (0.215, 0.800, 0.215, 0.852),  // 图底 → 网侧负载
-            (0.440, 0.800, 0.440, 0.852),  // 图底 → 发电机
-            (0.730, 0.688, 0.730, 0.732),  // 电池柜顶 → 电池浮标
+            (0.215, 0.105, 0.215, 0.240),  // 电网 → 屋顶左上方
+            (0.730, 0.080, 0.730, 0.240),  // 光伏板 → 屋顶右上方
+            (0.215, 0.782, 0.215, 0.852),  // 建筑底 → 网侧负载
+            (0.440, 0.752, 0.440, 0.852),  // 发电机箱顶 → 发电机浮标
+            (0.740, 0.672, 0.740, 0.738),  // 电池柜顶 → 电池浮标
         ]
     }
 
-    // 青色流动段：(x1,y1,x2,y2,active,reverse)
-    // reverse=false 流向路径终点（取电↓ 发电↓ 供电→），true 流向起点（馈电↑ 放电↑）
-    private var flowSegments: [(CGFloat, CGFloat, CGFloat, CGFloat, Bool, Bool)] {
+    // 青色流动段：沿 isg 内真实管路（像素提取坐标，已映射到组件比例）
+    // reverse=false 流向路径终点，true 流向起点
+    private var flowSegments: [(points: [(CGFloat, CGFloat)], active: Bool, reverse: Bool)] {
         [
-            (0.215, 0.245, 0.215, 0.325, gridActive, gridReverse),             // 电网：取电↓ / 馈电↑
-            (0.730, 0.245, 0.730, 0.340, pvActive, false),                      // 光伏发电 ↓
-            (0.545, 0.452, 0.640, 0.452, loadActive, false),                    // 逆变器 → 离网负载 →
-            (0.730, 0.560, 0.730, 0.688, batteryActive, batteryReverse),        // 充电↓ / 放电↑
+            // ① 屋顶光伏板 → 逆变器（发电 ↓）
+            ([(0.4846, 0.3155), (0.4846, 0.4354)], pvActive, false),
+            // ② 表箱 → 逆变器（取电 →，馈电 ←）
+            ([(0.1856, 0.4727), (0.1856, 0.5244), (0.4340, 0.5244)], gridActive, gridReverse),
+            // ③ 逆变器 → 电池柜（充电 ↓，放电 ↑）
+            ([(0.4800, 0.5419), (0.4800, 0.6480), (0.6640, 0.6480)], batteryActive, batteryReverse),
+            // ④ 逆变器 → 离网负载气泡引线（供电 →）
+            ([(0.5280, 0.4430), (0.6620, 0.4430)], loadActive, false),
+            // ⑤ 逆变器 → 发电机：现场无发电机实体，恒 0 W 不流动
         ]
     }
 
@@ -966,23 +961,26 @@ private struct HouseFlowCanvas: View {
                     ctx.stroke(p, with: .color(Color.white.opacity(0.42)),
                                style: StrokeStyle(lineWidth: 1.4, dash: [5, 6]))
                 }
-                for (x1, y1, x2, y2, active, reverse) in flowSegments where active {
+                for seg in flowSegments where seg.active {
+                    guard let first = seg.points.first, let last = seg.points.last else { continue }
                     var p = Path()
-                    p.move(to: CGPoint(x: w * x1, y: h * y1))
-                    p.addLine(to: CGPoint(x: w * x2, y: h * y2))
+                    p.move(to: CGPoint(x: w * first.0, y: h * first.1))
+                    for pt in seg.points.dropFirst() {
+                        p.addLine(to: CGPoint(x: w * pt.0, y: h * pt.1))
+                    }
                     // 雷凌 Forward = dashoffset 负方向（流向路径终点）
                     ctx.stroke(
                         p,
                         with: .linearGradient(
                             Gradient(colors: [Color(hex: 0x9FF6FF), Color(hex: 0x3FD2E4)]),
-                            startPoint: CGPoint(x: w * x1, y: h * y1),
-                            endPoint: CGPoint(x: w * x2, y: h * y2)
+                            startPoint: CGPoint(x: w * first.0, y: h * first.1),
+                            endPoint: CGPoint(x: w * last.0, y: h * last.1)
                         ),
                         style: StrokeStyle(
-                            lineWidth: 4.5,
+                            lineWidth: 4.0,
                             lineCap: .round,
-                            dash: [max(8, w * 0.024), max(16, w * 0.048)],
-                            dashPhase: reverse ? CGFloat(phase) : -CGFloat(phase)
+                            dash: [max(8, w * 0.022), max(16, w * 0.044)],
+                            dashPhase: seg.reverse ? CGFloat(phase) : -CGFloat(phase)
                         )
                     )
                 }
