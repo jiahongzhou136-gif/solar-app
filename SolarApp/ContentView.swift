@@ -879,10 +879,10 @@ struct LuminaHero: View {
                            w: CGFloat, h: CGFloat) -> some View {
         VStack(spacing: 2) {
             Text(label)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(Palette.text.opacity(0.85))
             Text(value)
-                .font(.system(size: 24, weight: .heavy))
+                .font(.system(size: 20, weight: .heavy))
                 .foregroundStyle(Palette.text)
                 .minimumScaleFactor(0.7)
                 .lineLimit(1)
@@ -897,10 +897,10 @@ struct LuminaHero: View {
                              w: CGFloat, h: CGFloat) -> some View {
         VStack(spacing: 1) {
             Text(label)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(Color.white.opacity(0.9))
             Text(value)
-                .font(.system(size: 20, weight: .heavy))
+                .font(.system(size: 17, weight: .heavy))
                 .foregroundStyle(Color.white)
         }
         .padding(.horizontal, 12)
@@ -913,7 +913,7 @@ struct LuminaHero: View {
     }
 }
 
-/// 引线虚线（静态灰白）+ 青色流动段（雷凌复刻：短亮段沿管路流动，方向=能量流向）
+/// 引线虚线（静态灰白）+ 雷凌 GCD 流动线（GIF 逐帧染色直搬）
 private struct HouseFlowCanvas: View {
     let w: CGFloat, h: CGFloat
     let gridActive: Bool
@@ -923,7 +923,7 @@ private struct HouseFlowCanvas: View {
     let batteryActive: Bool
     let batteryReverse: Bool
 
-    // 静态竖虚线引线（x1,y1,x2,y2 组件比例；按雷凌截图标定）
+    // 静态竖虚线引线（x1,y1,x2,y2 组件比例）
     private var dashedLines: [(CGFloat, CGFloat, CGFloat, CGFloat)] {
         [
             (0.215, 0.105, 0.215, 0.240),  // 电网 → 屋顶左上方
@@ -934,61 +934,84 @@ private struct HouseFlowCanvas: View {
         ]
     }
 
-    // 青色流动段：沿 isg 内真实管路（像素提取坐标，已映射到组件比例）
-    // reverse=false 流向路径终点，true 流向起点
-    private var flowSegments: [(points: [(CGFloat, CGFloat)], active: Bool, reverse: Bool)] {
-        [
-            // ① 屋顶光伏板 → 逆变器（发电 ↓）
-            ([(0.4616, 0.3635), (0.4616, 0.4397)], pvActive, false),
-            // ② 表箱 → 逆变器（取电 →，馈电 ←）
-            ([(0.1856, 0.4620), (0.1856, 0.5271), (0.5490, 0.5271)], gridActive, gridReverse),
-            // ③ 逆变器 → 电池柜（充电 ↓，放电 ↑）
-            ([(0.4717, 0.6048), (0.4717, 0.6368), (0.6548, 0.6368)], batteryActive, batteryReverse),
-            // ④ 逆变器 → 建筑（沿窗台板，供电 →）
-            ([(0.5315, 0.5356), (0.6640, 0.5356)], loadActive, false),
-            // ⑤ 逆变器 → 发电机：现场无发电机实体，恒 0 W 不流动
-        ]
-    }
-
     var body: some View {
-        // .periodic 不受「减弱动态效果」影响；相位取相对时间并取模，
-        // 避免 timeIntervalSinceReferenceDate × 45 ≈ 3.5e10 超出绘制管线浮点精度导致 dashPhase 不推进
-        TimelineView(.periodic(from: .now, by: 1.0 / 30)) { timeline in
-            let elapsed = timeline.date.timeIntervalSinceNow
-            let phase = elapsed.truncatingRemainder(dividingBy: 2.0) * 45
-            Canvas { ctx, _ in
+        ZStack {
+            // 静态虚线引线
+            Path { p in
                 for (x1, y1, x2, y2) in dashedLines {
-                    var p = Path()
                     p.move(to: CGPoint(x: w * x1, y: h * y1))
                     p.addLine(to: CGPoint(x: w * x2, y: h * y2))
-                    ctx.stroke(p, with: .color(Color.white.opacity(0.42)),
-                               style: StrokeStyle(lineWidth: 1.4, dash: [5, 6]))
-                }
-                for seg in flowSegments where seg.active {
-                    guard let first = seg.points.first, let last = seg.points.last else { continue }
-                    var p = Path()
-                    p.move(to: CGPoint(x: w * first.0, y: h * first.1))
-                    for pt in seg.points.dropFirst() {
-                        p.addLine(to: CGPoint(x: w * pt.0, y: h * pt.1))
-                    }
-                    // 雷凌 Forward = dashoffset 负方向（流向路径终点）
-                    ctx.stroke(
-                        p,
-                        with: .linearGradient(
-                            Gradient(colors: [Color(hex: 0x9FF6FF), Color(hex: 0x3FD2E4)]),
-                            startPoint: CGPoint(x: w * first.0, y: h * first.1),
-                            endPoint: CGPoint(x: w * last.0, y: h * last.1)
-                        ),
-                        style: StrokeStyle(
-                            lineWidth: 4.0,
-                            lineCap: .round,
-                            dash: [max(8, w * 0.022), max(16, w * 0.044)],
-                            dashPhase: seg.reverse ? CGFloat(phase) : -CGFloat(phase)
-                        )
-                    )
                 }
             }
+            .stroke(Color.white.opacity(0.42), style: StrokeStyle(lineWidth: 1.4, dash: [5, 6]))
+
+            // ① 屋顶光伏板 → 逆变器（竖直，发电时播放）
+            if pvActive {
+                FlowGIF(name: "FlowVertical", tint: FlowTint.cyan, reverse: false)
+                    .frame(width: w * 0.062, height: h * 0.105)
+                    .position(x: w * 0.461, y: h * 0.402)
+            }
+            // ② 表箱 → 逆变器（水平，取电播放；馈电反向）
+            if gridActive {
+                FlowGIF(name: "FlowHorizontal", tint: FlowTint.cyan, reverse: gridReverse)
+                    .frame(width: w * 0.370, height: w * 0.370 * (80.0 / 305.0))
+                    .position(x: w * 0.368, y: h * 0.527)
+            }
+            // ③ 逆变器 → 电池柜（水平，充放播放；放电反向）
+            if batteryActive {
+                FlowGIF(name: "FlowHorizontal", tint: FlowTint.cyan, reverse: batteryReverse)
+                    .frame(width: w * 0.185, height: w * 0.185 * (80.0 / 305.0))
+                    .position(x: w * 0.563, y: h * 0.637)
+            }
+            // ④ 逆变器 → 建筑（竖直，供电时播放）—— 雷凌里这条是竖直的
+            if loadActive {
+                FlowGIF(name: "FlowVertical", tint: FlowTint.cyan, reverse: false)
+                    .frame(width: w * 0.062, height: h * 0.120)
+                    .position(x: w * 0.735, y: h * 0.500)
+            }
         }
+    }
+}
+
+enum FlowTint {
+    /// 雷凌截图实测浅青 #98F0F8
+    static let cyan = UIColor(red: 0.596, green: 0.941, blue: 0.973, alpha: 1)
+}
+
+/// 播放雷凌 GIF：逐帧按掩码染色（等价 Flutter 的 ColorFilter.srcIn），支持反向（水平翻转/垂直翻转）
+private struct FlowGIF: UIViewRepresentable {
+    let name: String
+    let tint: UIColor
+    /// true = 反向流动（通过水平翻转模拟）
+    let reverse: Bool
+
+    func makeUIView(context: Context) -> UIImageView {
+        let iv = UIImageView()
+        iv.contentMode = .scaleToFill
+        iv.clipsToBounds = true
+        iv.image = Self.tintedAnimatedImage(named: name, tint: tint, reverse: reverse)
+        return iv
+    }
+
+    func updateUIView(_ uiView: UIImageView, context: Context) {}
+
+    static func tintedAnimatedImage(named: String, tint: UIColor, reverse: Bool) -> UIImage? {
+        guard let src = UIImage(named: named) else { return nil }
+        let frames = src.images ?? [src]
+        let duration = src.duration > 0 ? src.duration : Double(frames.count) * 0.04
+        let tinted: [UIImage] = frames.map { frame in
+            let size = frame.size
+            return UIGraphicsImageRenderer(size: size).image { ctx in
+                tint.set()
+                let rect = CGRect(origin: .zero, size: size)
+                if reverse {
+                    ctx.cgContext.translateBy(x: size.width, y: 0)
+                    ctx.cgContext.scaleBy(x: -1, y: 1)
+                }
+                frame.withRenderingMode(.alwaysTemplate).draw(in: rect)
+            }
+        }
+        return UIImage.animatedImage(with: tinted, duration: duration)
     }
 }
 
