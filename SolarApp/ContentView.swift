@@ -813,8 +813,8 @@ struct LuminaHero: View {
                 // 建筑主体（透明底，中心对齐截图建筑位置）
                 Image("LuminaHouse")
                     .resizable()
-                    .frame(width: w * 0.92, height: w * 0.92 * (634.0 / 1038.0))
-                    .position(x: w * 0.48, y: h * 0.51)
+                    .frame(width: w * 0.994, height: w * 0.994 * (634.0 / 1038.0))
+                    .position(x: w * 0.566, y: h * 0.383)
 
                 // 引线虚线 + 青色流动段
                 HouseFlowCanvas(
