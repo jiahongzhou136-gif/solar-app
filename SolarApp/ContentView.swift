@@ -879,10 +879,10 @@ struct LuminaHero: View {
                            w: CGFloat, h: CGFloat) -> some View {
         VStack(spacing: 2) {
             Text(label)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Palette.text.opacity(0.82))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Palette.text.opacity(0.85))
             Text(value)
-                .font(.system(size: 21, weight: .bold, design: .rounded))
+                .font(.system(size: 24, weight: .heavy))
                 .foregroundStyle(Palette.text)
                 .minimumScaleFactor(0.7)
                 .lineLimit(1)
@@ -897,10 +897,10 @@ struct LuminaHero: View {
                              w: CGFloat, h: CGFloat) -> some View {
         VStack(spacing: 1) {
             Text(label)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color.white.opacity(0.9))
             Text(value)
-                .font(.system(size: 17, weight: .bold, design: .rounded))
+                .font(.system(size: 20, weight: .heavy))
                 .foregroundStyle(Color.white)
         }
         .padding(.horizontal, 12)
@@ -939,20 +939,23 @@ private struct HouseFlowCanvas: View {
     private var flowSegments: [(points: [(CGFloat, CGFloat)], active: Bool, reverse: Bool)] {
         [
             // ① 屋顶光伏板 → 逆变器（发电 ↓）
-            ([(0.4846, 0.3155), (0.4846, 0.4354)], pvActive, false),
+            ([(0.4616, 0.3635), (0.4616, 0.4397)], pvActive, false),
             // ② 表箱 → 逆变器（取电 →，馈电 ←）
-            ([(0.1856, 0.4727), (0.1856, 0.5244), (0.4340, 0.5244)], gridActive, gridReverse),
+            ([(0.1856, 0.4620), (0.1856, 0.5271), (0.5490, 0.5271)], gridActive, gridReverse),
             // ③ 逆变器 → 电池柜（充电 ↓，放电 ↑）
-            ([(0.4800, 0.5419), (0.4800, 0.6480), (0.6640, 0.6480)], batteryActive, batteryReverse),
-            // ④ 逆变器 → 离网负载气泡引线（供电 →）
-            ([(0.5280, 0.4430), (0.6620, 0.4430)], loadActive, false),
+            ([(0.4717, 0.6048), (0.4717, 0.6368), (0.6548, 0.6368)], batteryActive, batteryReverse),
+            // ④ 逆变器 → 建筑（沿窗台板，供电 →）
+            ([(0.5315, 0.5356), (0.6640, 0.5356)], loadActive, false),
             // ⑤ 逆变器 → 发电机：现场无发电机实体，恒 0 W 不流动
         ]
     }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30)) { timeline in
-            let phase = timeline.date.timeIntervalSinceReferenceDate * 45
+        // .periodic 不受「减弱动态效果」影响；相位取相对时间并取模，
+        // 避免 timeIntervalSinceReferenceDate × 45 ≈ 3.5e10 超出绘制管线浮点精度导致 dashPhase 不推进
+        TimelineView(.periodic(from: .now, by: 1.0 / 30)) { timeline in
+            let elapsed = timeline.date.timeIntervalSinceNow
+            let phase = elapsed.truncatingRemainder(dividingBy: 2.0) * 45
             Canvas { ctx, _ in
                 for (x1, y1, x2, y2) in dashedLines {
                     var p = Path()
