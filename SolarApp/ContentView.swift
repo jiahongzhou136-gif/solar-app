@@ -945,26 +945,26 @@ private struct HouseFlowCanvas: View {
             }
             .stroke(Color.white.opacity(0.42), style: StrokeStyle(lineWidth: 1.4, dash: [5, 6]))
 
-            // ① 屋顶光伏板 → 逆变器（竖直，发电时播放）截图实测 x0.476 y0.295-0.377
-            if pvActive {
+            // ① 屋顶光伏板 → 逆变器（临时关闭，先核对底图）
+            if false {
                 FlowFrames(prefix: "flowv", count: 45, reverse: false)
                     .frame(width: w * 0.070, height: h * 0.115)
                     .position(x: w * 0.476, y: h * 0.336)
             }
-            // ② 表箱 → 逆变器（水平，取电播放 / 馈电反向）截图实测 y0.422 x0.21-0.43
-            if gridActive {
+            // ② 表箱 → 逆变器（临时关闭）
+            if false {
                 FlowFrames(prefix: "flowh", count: 45, reverse: gridReverse)
                     .frame(width: w * 0.225, height: h * 0.050)
                     .position(x: w * 0.320, y: h * 0.422)
             }
-            // ③ 逆变器 → 电池柜（水平，充放播放 / 放电反向）截图实测 y0.448 x0.49-0.69
-            if batteryActive {
+            // ③ 逆变器 → 电池柜（临时关闭）
+            if false {
                 FlowFrames(prefix: "flowh", count: 45, reverse: batteryReverse)
                     .frame(width: w * 0.205, height: h * 0.050)
                     .position(x: w * 0.590, y: h * 0.448)
             }
-            // ④ 逆变器 → 建筑（竖直，供电时播放）截图实测 x0.710 y0.320-0.407
-            if loadActive {
+            // ④ 逆变器 → 建筑（临时关闭）
+            if false {
                 FlowFrames(prefix: "flowv", count: 45, reverse: false)
                     .frame(width: w * 0.070, height: h * 0.112)
                     .position(x: w * 0.710, y: h * 0.364)
