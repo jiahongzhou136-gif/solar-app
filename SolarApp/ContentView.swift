@@ -825,7 +825,7 @@ struct LuminaHero: View {
                 // 浮标（雷凌原版字号：标签 9 / 数值 12；网侧负载已删除）
                 buoy("电网", gridText, 0.243, 0.166, w: w, h: h)
                 buoy("光伏板", Fmt.watt(data.pv1), 0.787, 0.149, w: w, h: h)
-                loadBubble("离网负载", Fmt.watt(data.load), 0.705, 0.451, w: w, h: h)
+                buoyDark("离网负载", Fmt.watt(data.load), 0.705, 0.451, w: w, h: h)
                 buoy("发电机", "0 W", 0.658, 0.816, w: w, h: h)
                 buoy("电池", batteryText, 0.850, 0.821, w: w, h: h)
             }
@@ -869,22 +869,19 @@ struct LuminaHero: View {
         .position(x: w * xf, y: h * yf)
     }
 
-    /// 离网负载：深色气泡（覆盖底图上的旧气泡痕迹）
-    private func loadBubble(_ label: String, _ value: String, _ xf: CGFloat, _ yf: CGFloat,
-                            w: CGFloat, h: CGFloat) -> some View {
-        VStack(spacing: 0) {
+    /// 离网负载浮标：无气泡，深灰黑字（压在浅色墙面上，与雷凌原版一致）
+    private func buoyDark(_ label: String, _ value: String, _ xf: CGFloat, _ yf: CGFloat,
+                          w: CGFloat, h: CGFloat) -> some View {
+        VStack(spacing: 1) {
             Text(label)
                 .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(Color.white.opacity(0.9))
+                .foregroundStyle(Color(hex: 0x38424F).opacity(0.92))
             Text(value)
                 .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(Color.white)
+                .foregroundStyle(Color(hex: 0x232C38))
+                .minimumScaleFactor(0.8)
+                .lineLimit(1)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Color(hex: 0x1B2430).opacity(0.82),
-                    in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .shadow(color: Color.black.opacity(0.35), radius: 3, y: 1)
         .fixedSize()
         .position(x: w * xf, y: h * yf)
     }
