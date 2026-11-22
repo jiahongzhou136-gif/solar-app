@@ -808,25 +808,26 @@ struct LuminaHero: View {
         GeometryReader { geo in
             let w = geo.size.width
             let h = geo.size.height
-            // 底图 1170×1100，宽度铺满，垂直居中
-            let imgW = w
             let imgH = w * 1100.0 / 1170.0
 
             ZStack {
                 Image("LuminaHouse")
                     .resizable()
-                    .frame(width: imgW, height: imgH)
+                    .frame(width: w, height: imgH)
                     .position(x: w * 0.5, y: h * 0.5)
 
-                HouseFlowCanvas(w: w, h: h)
+                FlowBands(w: w, h: h,
+                          loadOn: loadOn,
+                          gridOn: gridOn, gridRev: gridExporting,
+                          battOn: battOn, battRev: batteryDischarging)
                     .allowsHitTesting(false)
                     .opacity(glowIn)
 
-                // 浮标（雷凌原版字号：标签 9 / 数值 12；网侧负载已删除）
+                // 浮标（雷凌原版字号：标签 9 / 数值 12）
                 buoy("电网", gridText, 0.243, 0.166, w: w, h: h)
                 buoy("光伏板", Fmt.watt(data.pv1), 0.787, 0.149, w: w, h: h)
-                buoyDark("离网负载", Fmt.watt(data.load), 0.705, 0.451, w: w, h: h)
-                buoy("发电机", "0 W", 0.658, 0.816, w: w, h: h)
+                loadBubble(Fmt.watt(data.load), 0.688, 0.457, w: w, h: h)
+                buoy("发电机", "0 W", 0.485, 0.865, w: w, h: h)
                 buoy("电池", batteryText, 0.850, 0.821, w: w, h: h)
             }
         }
@@ -836,7 +837,7 @@ struct LuminaHero: View {
         }
     }
 
-    // 电网：正数取电显示数值，零显示 0 W
+    // 电网：正数取电，零显示 0 W
     private var gridText: String {
         guard let g = data.grid else { return "--" }
         if abs(g) < 50 { return "0 W" }
@@ -849,6 +850,16 @@ struct LuminaHero: View {
         if charging, let c = data.charge { return "+\(Fmt.watt(c))" }
         if discharging, let d = data.discharge { return "-\(Fmt.watt(d))" }
         return "0 W"
+    }
+
+    private var loadOn: Bool { (data.load ?? 0) > 20 }
+    private var gridOn: Bool { abs(data.grid ?? 0) > 20 }
+    private var gridExporting: Bool { (data.grid ?? 0) < -20 }
+    private var battOn: Bool {
+        (data.charge ?? 0) > 20 || (data.discharge ?? 0) > 20
+    }
+    private var batteryDischarging: Bool {
+        (data.discharge ?? 0) > 20 && (data.charge ?? 0) <= 0
     }
 
     /// 普通浮标：无底色纯文字（白字，雷凌原版字号 9/12）
@@ -869,92 +880,103 @@ struct LuminaHero: View {
         .position(x: w * xf, y: h * yf)
     }
 
-    /// 离网负载浮标：无气泡，深灰黑字（压在浅色墙面上，与雷凌原版一致）
-    private func buoyDark(_ label: String, _ value: String, _ xf: CGFloat, _ yf: CGFloat,
-                          w: CGFloat, h: CGFloat) -> some View {
-        VStack(spacing: 1) {
-            Text(label)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(Color(hex: 0x38424F).opacity(0.92))
+    /// 离网负载：雷凌原版白底圆角气泡（浅底 + 深色字）
+    private func loadBubble(_ value: String, _ xf: CGFloat, _ yf: CGFloat,
+                            w: CGFloat, h: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            Text("离网负载")
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(Color(hex: 0x4A555F))
             Text(value)
                 .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(Color(hex: 0x232C38))
+                .foregroundStyle(Color(hex: 0x1F2833))
                 .minimumScaleFactor(0.8)
                 .lineLimit(1)
         }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color(hex: 0xF3F5F8).opacity(0.96))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(Color.white.opacity(0.6), lineWidth: 0.5)
+        )
+        .shadow(color: Color.black.opacity(0.10), radius: 3, x: 0, y: 1)
         .fixedSize()
         .position(x: w * xf, y: h * yf)
     }
 }
 
-/// 三条水平能量流（视频实测坐标/速度，全部向右；馈电或放电时反向）
-private struct HouseFlowCanvas: View {
-    let w: CGFloat, h: CGFloat
+/// 三条能量流：位置 / 条长 / 条宽全部取自底图实测的青色标识，条带沿电缆平移
+private struct FlowBands: View {
+    let w: CGFloat
+    let h: CGFloat
+    let loadOn: Bool
+    let gridOn: Bool
+    let gridRev: Bool
+    let battOn: Bool
+    let battRev: Bool
 
-    // 底图归一化 → 组件坐标
-    private func cx(_ nx: CGFloat) -> CGFloat { nx * w }
-    private func cy(_ ny: CGFloat) -> CGFloat {
-        let imgH = w * 1100.0 / 1170.0
-        return (h - imgH) / 2 + ny * imgH
+    @State private var t0 = Date()
+
+    private struct Seg {
+        let ny: CGFloat      // 电缆中心线（底图归一化 y）
+        let nx0: CGFloat     // 电缆起点（底图归一化 x）
+        let nx1: CGFloat     // 电缆终点
+        let blen: CGFloat    // 条带长度（占组件宽比例）
+        let speed: CGFloat   // 速度（组件宽/秒）
+        let on: Bool
+        let rev: Bool
     }
 
-    // 三条线：(y, x0, x1, 周期秒, 是否反向)
-    private var lines: [(CGFloat, CGFloat, CGFloat, Double, Bool)] {
+    private var segs: [Seg] {
         [
-            (0.516, 0.619, 0.722, 1.48, false),  // A 逆变器→住宅
-            (0.582, 0.292, 0.445, 1.38, true),   // B 市电电表→逆变器（取电向右，馈电反向）
-            (0.732, 0.503, 0.678, 1.97, false),  // C 逆变器→电池（充电向右，放电反向）
+            // A 逆变器 → 住宅（离网负载）
+            Seg(ny: 0.5191, nx0: 0.5453, nx1: 0.7034, blen: 0.0538, speed: 0.0605, on: loadOn, rev: false),
+            // B 市电电表 ↔ 逆变器（取电向右，馈电向左）
+            Seg(ny: 0.5827, nx0: 0.1966, nx1: 0.4274, blen: 0.0778, speed: 0.0995, on: gridOn, rev: gridRev),
+            // C 逆变器 ↔ 电池（充电向右，放电向左）
+            Seg(ny: 0.7318, nx0: 0.5077, nx1: 0.6667, blen: 0.0624, speed: 0.0788, on: battOn, rev: battRev),
         ]
     }
 
     var body: some View {
-        ZStack {
-            ForEach(Array(lines.enumerated()), id: \.offset) { idx, line in
-                let (ly, lx0, lx1, period, rev) = line
-                FlowFrames(prefix: "flowh", count: 45, reverse: rev, duration: period)
-                    .frame(width: cx(lx1) - cx(lx0),
-                           height: (cx(lx1) - cx(lx0)) * 80.0 / 305.0)
-                    .position(x: (cx(lx0) + cx(lx1)) / 2, y: cy(ly))
+        let imgH = w * 1100.0 / 1170.0
+        let imgTop = (h - imgH) / 2
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { ctx in
+            Canvas { base, _ in
+                let t = ctx.date.timeIntervalSince(t0)
+                for s in segs where s.on {
+                    let yc = imgTop + s.ny * imgH
+                    let x0 = s.nx0 * w
+                    let x1 = s.nx1 * w
+                    let blen = s.blen * w
+                    let th = 0.0086 * w
+                    let travel = (x1 - x0) + blen
+                    let period = Double(travel / max(1, s.speed * w))
+                    var p = (t / period).truncatingRemainder(dividingBy: 1)
+                    if p < 0 { p += 1 }
+                    let offset = CGFloat(p) * travel - blen
+                    let bx = s.rev ? (x1 - offset - blen) : (x0 + offset)
+
+                    var gc = base
+                    // 严格限制在电缆范围内
+                    gc.clip(to: Path(CGRect(x: x0, y: yc - th, width: x1 - x0, height: th * 2)))
+
+                    let body = CGRect(x: bx, y: yc - th / 2, width: blen, height: th)
+                    gc.fill(Path(roundedRect: body.insetBy(dx: -th * 0.45, dy: -th * 0.45),
+                                 cornerRadius: th),
+                            with: .color(Color(hex: 0x12D4F0).opacity(0.20)))
+                    gc.fill(Path(roundedRect: body, cornerRadius: th / 2),
+                            with: .linearGradient(
+                                Gradient(colors: [Color(hex: 0x0FC2E4), Color(hex: 0x66E8FA), Color(hex: 0x14C8EA)]),
+                                startPoint: CGPoint(x: body.minX, y: yc),
+                                endPoint: CGPoint(x: body.maxX, y: yc)))
+                }
             }
         }
-    }
-}
-
-/// PNG 帧序列播放（已预染色 #12D4F0）
-private struct FlowFrames: UIViewRepresentable {
-    let prefix: String
-    let count: Int
-    let reverse: Bool
-    let duration: Double
-
-    func makeUIView(context: Context) -> UIImageView {
-        let iv = UIImageView()
-        iv.contentMode = .scaleToFill
-        iv.clipsToBounds = true
-        iv.animationRepeatCount = 0
-
-        var imgs: [UIImage] = []
-        for i in 0..<count {
-            let name = String(format: "%@_%02d", prefix, i)
-            if let path = Bundle.main.path(forResource: name, ofType: "png"),
-               let img = UIImage(contentsOfFile: path) {
-                imgs.append(img)
-            }
-        }
-        if imgs.count >= 2 {
-            iv.animationImages = imgs
-            iv.animationDuration = duration
-            iv.startAnimating()
-            print("[FlowFrames] \(prefix): \(imgs.count) frames, \(String(format: "%.2f", duration))s")
-        } else {
-            print("[FlowFrames] \(prefix): ONLY \(imgs.count) FRAMES")
-        }
-        return iv
-    }
-
-    func updateUIView(_ uiView: UIImageView, context: Context) {
-        uiView.transform = reverse ? CGAffineTransform(scaleX: -1, y: 1) : .identity
-        if !uiView.isAnimating { uiView.startAnimating() }
     }
 }
 
