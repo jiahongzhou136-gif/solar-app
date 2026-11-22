@@ -796,9 +796,9 @@ private struct RainLayer: View {
     }
 }
 
-// MARK: - 全景卡（雷凌白墙建筑 1:1 还原）
-// 底图：station_flow/isg.png（1038×634，原生透明底，含建筑+灰色管路）
-// 浮标/虚线/流动段：代码绘制，坐标按雷凌截图标定
+// MARK: - 全景卡（雷凌 ios 版建筑 1:1 还原）
+// 底图：从 iPhone 原图抠出（1170×1100，透明底，含底图自带的青色标识）
+// 三条流动线：视频实测 全部向右，速度 25/40/32 pt/s，颜色 #12D4F0
 
 struct LuminaHero: View {
     let data: SolarData
@@ -808,35 +808,26 @@ struct LuminaHero: View {
         GeometryReader { geo in
             let w = geo.size.width
             let h = geo.size.height
+            // 底图 1170×1100，宽度铺满，垂直居中
+            let imgW = w
+            let imgH = w * 1100.0 / 1170.0
 
             ZStack {
-                // 建筑主体（透明底，中心对齐截图建筑位置）
                 Image("LuminaHouse")
                     .resizable()
-                    .frame(width: w * 0.994, height: w * 0.994 * (634.0 / 1038.0))
-                    .position(x: w * 0.566, y: h * 0.383)
+                    .frame(width: imgW, height: imgH)
+                    .position(x: w * 0.5, y: h * 0.5)
 
-                // 引线虚线 + 青色流动段
-                HouseFlowCanvas(
-                    w: w, h: h,
-                    gridActive: activeGrid,
-                    gridReverse: gridExporting,
-                    pvActive: activePV,
-                    loadActive: activeLoad,
-                    batteryActive: activeBattery,
-                    batteryReverse: batteryDischarging
-                )
-                .allowsHitTesting(false)
-                .opacity(glowIn)
+                HouseFlowCanvas(w: w, h: h)
+                    .allowsHitTesting(false)
+                    .opacity(glowIn)
 
-                // 六组浮标（位置按雷凌截图）
-                houseBuoy("电网", gridValue, 0.24, 0.075, w: w, h: h)
-                houseBuoy("光伏板", pvValue, 0.77, 0.050, w: w, h: h)
-                houseBubble("离网负载", loadValue, 0.735, 0.398, w: w, h: h)
-                houseBuoy("网侧负载", "0 W", 0.24, 0.825, w: w, h: h)
-                houseBuoy("发电机", "0 W", 0.47, 0.832, w: w, h: h)
-                houseBuoy("电池", batteryValue, 0.77, 0.765, w: w, h: h)
-
+                // 浮标（雷凌原版字号：标签 9 / 数值 12；网侧负载已删除）
+                buoy("电网", gridText, 0.243, 0.166, w: w, h: h)
+                buoy("光伏板", Fmt.watt(data.pv1), 0.787, 0.149, w: w, h: h)
+                loadBubble("离网负载", Fmt.watt(data.load), 0.705, 0.451, w: w, h: h)
+                buoy("发电机", "0 W", 0.658, 0.816, w: w, h: h)
+                buoy("电池", batteryText, 0.850, 0.821, w: w, h: h)
             }
         }
         .aspectRatio(1024.0 / 1080.0, contentMode: .fit)
@@ -845,15 +836,14 @@ struct LuminaHero: View {
         }
     }
 
-    // 数据映射（已确认）：电网←grid 光伏←pv1 离网负载←load 电池←充放互斥 网侧负载/发电机=0
-    private var gridValue: String {
+    // 电网：正数取电显示数值，零显示 0 W
+    private var gridText: String {
         guard let g = data.grid else { return "--" }
         if abs(g) < 50 { return "0 W" }
         return Fmt.watt(data.grid)
     }
-    private var pvValue: String { Fmt.watt(data.pv1) }
-    private var loadValue: String { Fmt.watt(data.load) }
-    private var batteryValue: String {
+    // 电池：充电正 / 放电负
+    private var batteryText: String {
         let charging = (data.charge ?? 0) > 0 && (data.discharge ?? 0) <= 0
         let discharging = (data.discharge ?? 0) > 0 && (data.charge ?? 0) <= 0
         if charging, let c = data.charge { return "+\(Fmt.watt(c))" }
@@ -861,123 +851,84 @@ struct LuminaHero: View {
         return "0 W"
     }
 
-    private var activePV: Bool { (data.pv1 ?? 0) > 20 }
-    private var activeLoad: Bool { (data.load ?? 0) > 20 }
-    private var activeBattery: Bool {
-        // 与 HA _derivedState 一致：只看两个互斥正值
-        (data.charge ?? 0) > 0 || (data.discharge ?? 0) > 0
-    }
-    private var activeGrid: Bool { abs(data.grid ?? 0) > 20 }
-    private var batteryDischarging: Bool {
-        (data.discharge ?? 0) > 0 && !((data.charge ?? 0) > 0)
-    }
-    // 市电馈电：grid_power_raw 为负（面板 fallback 口径）
-    private var gridExporting: Bool { (data.grid ?? 0) < 0 }
-
-    // 普通浮标：无底色白字（深色天气背景上），标签小字+数值大粗字
-    private func houseBuoy(_ label: String, _ value: String, _ xf: CGFloat, _ yf: CGFloat,
-                           w: CGFloat, h: CGFloat) -> some View {
-        VStack(spacing: 2) {
+    /// 普通浮标：无底色纯文字（白字，雷凌原版字号 9/12）
+    private func buoy(_ label: String, _ value: String, _ xf: CGFloat, _ yf: CGFloat,
+                      w: CGFloat, h: CGFloat) -> some View {
+        VStack(spacing: 1) {
             Text(label)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Palette.text.opacity(0.85))
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(Color.white.opacity(0.92))
             Text(value)
-                .font(.system(size: 20, weight: .heavy))
-                .foregroundStyle(Palette.text)
-                .minimumScaleFactor(0.7)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Color.white)
+                .minimumScaleFactor(0.8)
                 .lineLimit(1)
         }
-        .shadow(color: Color.black.opacity(0.45), radius: 3, x: 0, y: 1)
+        .shadow(color: Color.black.opacity(0.55), radius: 2.5, x: 0, y: 1)
         .fixedSize()
         .position(x: w * xf, y: h * yf)
     }
 
-    // 离网负载：深色半透明气泡+白字（雷凌截图样式）
-    private func houseBubble(_ label: String, _ value: String, _ xf: CGFloat, _ yf: CGFloat,
-                             w: CGFloat, h: CGFloat) -> some View {
-        VStack(spacing: 1) {
+    /// 离网负载：深色气泡（覆盖底图上的旧气泡痕迹）
+    private func loadBubble(_ label: String, _ value: String, _ xf: CGFloat, _ yf: CGFloat,
+                            w: CGFloat, h: CGFloat) -> some View {
+        VStack(spacing: 0) {
             Text(label)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(Color.white.opacity(0.9))
             Text(value)
-                .font(.system(size: 17, weight: .heavy))
+                .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(Color.white)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .background(Color(hex: 0x172033).opacity(0.72),
-                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .shadow(color: Color.black.opacity(0.30), radius: 4, y: 2)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color(hex: 0x1B2430).opacity(0.82),
+                    in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .shadow(color: Color.black.opacity(0.35), radius: 3, y: 1)
         .fixedSize()
         .position(x: w * xf, y: h * yf)
     }
 }
 
-/// 引线虚线（静态灰白）+ 雷凌流动线（PNG 帧序列直搬，预染色 #98F0F8）
+/// 三条水平能量流（视频实测坐标/速度，全部向右；馈电或放电时反向）
 private struct HouseFlowCanvas: View {
     let w: CGFloat, h: CGFloat
-    let gridActive: Bool
-    let gridReverse: Bool
-    let pvActive: Bool
-    let loadActive: Bool
-    let batteryActive: Bool
-    let batteryReverse: Bool
 
-    // 静态竖虚线引线（x1,y1,x2,y2 组件比例）
-    private var dashedLines: [(CGFloat, CGFloat, CGFloat, CGFloat)] {
+    // 底图归一化 → 组件坐标
+    private func cx(_ nx: CGFloat) -> CGFloat { nx * w }
+    private func cy(_ ny: CGFloat) -> CGFloat {
+        let imgH = w * 1100.0 / 1170.0
+        return (h - imgH) / 2 + ny * imgH
+    }
+
+    // 三条线：(y, x0, x1, 周期秒, 是否反向)
+    private var lines: [(CGFloat, CGFloat, CGFloat, Double, Bool)] {
         [
-            (0.215, 0.105, 0.215, 0.240),  // 电网 → 屋顶左上方
-            (0.730, 0.080, 0.730, 0.240),  // 光伏板 → 屋顶右上方
-            (0.215, 0.782, 0.215, 0.852),  // 建筑底 → 网侧负载
-            (0.440, 0.752, 0.440, 0.852),  // 发电机箱顶 → 发电机浮标
-            (0.740, 0.672, 0.740, 0.738),  // 电池柜顶 → 电池浮标
+            (0.516, 0.619, 0.722, 1.48, false),  // A 逆变器→住宅
+            (0.582, 0.292, 0.445, 1.38, true),   // B 市电电表→逆变器（取电向右，馈电反向）
+            (0.732, 0.503, 0.678, 1.97, false),  // C 逆变器→电池（充电向右，放电反向）
         ]
     }
 
     var body: some View {
         ZStack {
-            // 静态虚线引线
-            Path { p in
-                for (x1, y1, x2, y2) in dashedLines {
-                    p.move(to: CGPoint(x: w * x1, y: h * y1))
-                    p.addLine(to: CGPoint(x: w * x2, y: h * y2))
-                }
-            }
-            .stroke(Color.white.opacity(0.42), style: StrokeStyle(lineWidth: 1.4, dash: [5, 6]))
-
-            // ① 屋顶光伏板 → 逆变器（临时关闭，先核对底图）
-            if false {
-                FlowFrames(prefix: "flowv", count: 45, reverse: false)
-                    .frame(width: w * 0.070, height: h * 0.115)
-                    .position(x: w * 0.476, y: h * 0.336)
-            }
-            // ② 表箱 → 逆变器（临时关闭）
-            if false {
-                FlowFrames(prefix: "flowh", count: 45, reverse: gridReverse)
-                    .frame(width: w * 0.225, height: h * 0.050)
-                    .position(x: w * 0.320, y: h * 0.422)
-            }
-            // ③ 逆变器 → 电池柜（临时关闭）
-            if false {
-                FlowFrames(prefix: "flowh", count: 45, reverse: batteryReverse)
-                    .frame(width: w * 0.205, height: h * 0.050)
-                    .position(x: w * 0.590, y: h * 0.448)
-            }
-            // ④ 逆变器 → 建筑（临时关闭）
-            if false {
-                FlowFrames(prefix: "flowv", count: 45, reverse: false)
-                    .frame(width: w * 0.070, height: h * 0.112)
-                    .position(x: w * 0.710, y: h * 0.364)
+            ForEach(Array(lines.enumerated()), id: \.offset) { idx, line in
+                let (ly, lx0, lx1, period, rev) = line
+                FlowFrames(prefix: "flowh", count: 45, reverse: rev, duration: period)
+                    .frame(width: cx(lx1) - cx(lx0),
+                           height: (cx(lx1) - cx(lx0)) * 80.0 / 305.0)
+                    .position(x: (cx(lx0) + cx(lx1)) / 2, y: cy(ly))
             }
         }
     }
 }
 
-/// PNG 帧序列播放（最可靠：animationImages + startAnimating，不依赖 GIF 解析）
+/// PNG 帧序列播放（已预染色 #12D4F0）
 private struct FlowFrames: UIViewRepresentable {
     let prefix: String
     let count: Int
     let reverse: Bool
+    let duration: Double
 
     func makeUIView(context: Context) -> UIImageView {
         let iv = UIImageView()
@@ -995,18 +946,16 @@ private struct FlowFrames: UIViewRepresentable {
         }
         if imgs.count >= 2 {
             iv.animationImages = imgs
-            // 雷凌帧延迟 40ms
-            iv.animationDuration = Double(imgs.count) * 0.04
+            iv.animationDuration = duration
             iv.startAnimating()
-            print("[FlowFrames] \(prefix): \(imgs.count) frames, \(String(format: "%.2f", iv.animationDuration))s")
+            print("[FlowFrames] \(prefix): \(imgs.count) frames, \(String(format: "%.2f", duration))s")
         } else {
-            print("[FlowFrames] \(prefix): ONLY \(imgs.count) FRAMES — check Resources")
+            print("[FlowFrames] \(prefix): ONLY \(imgs.count) FRAMES")
         }
         return iv
     }
 
     func updateUIView(_ uiView: UIImageView, context: Context) {
-        // 反向流动：水平翻转（竖直段/反向段都适用）
         uiView.transform = reverse ? CGAffineTransform(scaleX: -1, y: 1) : .identity
         if !uiView.isAnimating { uiView.startAnimating() }
     }
