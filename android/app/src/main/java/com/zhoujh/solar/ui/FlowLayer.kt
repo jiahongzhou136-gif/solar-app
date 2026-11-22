@@ -2,110 +2,86 @@ package com.zhoujh.solar.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.graphics.drawscope.clipRect
 
-// 能流路径：与 HA 面板 SVG 同源（box 1617×971）
-// 正向语义：光伏→中心、中心→住宅、中心→电池(充)、市电→中心(取电)
-object FlowPaths {
-    const val BOX_W = 1617f
-    const val BOX_H = 971f
+/**
+ * 三条能量流（雷凌 ios 版 1:1 移植）
+ * 位置 / 条长 / 条宽全部取自底图实测的青色标识，条带沿电缆平移。
+ * nx/ny 为底图归一化坐标（底图 1110×905）。
+ */
+private data class FlowSeg(
+    val ny: Float,
+    val nx0: Float,
+    val nx1: Float,
+    val blen: Float,
+    val speed: Float,     // 组件宽/秒
+    val active: Boolean,
+    val reverse: Boolean
+)
 
-    private fun scale(size: IntSize): Pair<Float, Float> {
-        val w = size.width.toFloat()
-        val h = size.height.toFloat()
-        return w / BOX_W to h / BOX_H
-    }
-
-    fun path(size: IntSize, route: String): Path {
-        val (sx, sy) = scale(size)
-        fun p(x: Float, y: Float) = Offset(x * sx, y * sy)
-        val path = Path()
-        when (route) {
-            "pv" -> {
-                path.moveTo(p(470f, 580f).x, p(470f, 580f).y)
-                path.cubicTo(p(625f, 575f).x, p(625f, 575f).y, p(770f, 645f).x, p(770f, 645f).y, p(995f, 640f).x, p(995f, 640f).y)
-            }
-            "load" -> {
-                path.moveTo(p(1010f, 627f).x, p(1010f, 627f).y)
-                path.cubicTo(p(978f, 548f).x, p(978f, 548f).y, p(935f, 455f).x, p(935f, 455f).y, p(910f, 365f).x, p(910f, 365f).y)
-            }
-            "battery" -> {
-                path.moveTo(p(995f, 655f).x, p(995f, 655f).y)
-                path.cubicTo(p(905f, 690f).x, p(905f, 690f).y, p(820f, 730f).x, p(820f, 730f).y, p(735f, 765f).x, p(735f, 765f).y)
-            }
-            "grid" -> {
-                path.moveTo(p(1390f, 510f).x, p(1390f, 510f).y)
-                path.cubicTo(p(1280f, 540f).x, p(1280f, 540f).y, p(1160f, 610f).x, p(1160f, 610f).y, p(1025f, 640f).x, p(1025f, 640f).y)
-            }
-        }
-        return path
-    }
-
-    fun hub(size: IntSize): Offset {
-        val (sx, sy) = scale(size)
-        return Offset(1010f * sx, 640f * sy)
-    }
-}
-
-/** 能流绘制：底光常显；active 线路推进相位。正向 = -phase（对齐 HA Forward 0→-1000） */
 @Composable
 fun FlowLayer(
-    size: IntSize,
-    phase: Float,
-    pv: Boolean, load: Boolean,
-    battery: Boolean, batteryReverse: Boolean,
-    grid: Boolean, gridReverse: Boolean
+    timeSec: Float,
+    loadOn: Boolean,
+    gridOn: Boolean,
+    gridRev: Boolean,
+    battOn: Boolean,
+    battRev: Boolean,
+    modifier: Modifier = Modifier
 ) {
-    Canvas(modifier = androidx.compose.ui.Modifier) {
-        val routes = listOf(
-            Triple("pv", pv, false),
-            Triple("load", load, false),
-            Triple("battery", battery, batteryReverse),
-            Triple("grid", grid, gridReverse)
-        )
-        val dash = floatArrayOf(
-            maxOf(44f, size.width * 0.30f),
-            maxOf(30f, size.width * 0.20f)
-        )
-        for ((route, active, reverse) in routes) {
-            val path = FlowPaths.path(size, route)
-            // 底光
-            drawPath(
-                path,
-                color = Cyan.copy(alpha = if (active) 0.24f else 0.07f),
-                style = Stroke(width = maxOf(5f, size.width * 0.018f))
-            )
-            if (active) {
-                drawPath(
-                    path,
-                    brush = Brush.linearGradient(
-                        listOf(Color(0xFF78F8FF), Color(0xFFD9FFFF), Color(0xFF44E5FF)),
-                        start = Offset.Zero,
-                        end = Offset(size.width.toFloat(), size.height.toFloat())
-                    ),
-                    style = Stroke(
-                        width = maxOf(2.4f, size.width * 0.010f),
-                        cap = StrokeCap.Round,
-                        pathEffect = PathEffect.dashPathEffect(dash, if (reverse) phase else -phase)
-                    )
+    val segs = listOf(
+        // A 逆变器 → 住宅（离网负载）
+        FlowSeg(0.4597f, 0.5523f, 0.7189f, 0.0568f, 0.0605f, loadOn, false),
+        // B 市电电表 ↔ 逆变器（取电向右，馈电向左）
+        FlowSeg(0.5370f, 0.1847f, 0.4279f, 0.0820f, 0.0995f, gridOn, gridRev),
+        // C 逆变器 ↔ 电池（充电向右，放电向左）
+        FlowSeg(0.7182f, 0.5126f, 0.6802f, 0.0658f, 0.0788f, battOn, battRev)
+    )
+
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        val th = 0.0078f * w
+        for (s in segs) {
+            if (!s.active) continue
+            val yc = s.ny * h
+            val x0 = s.nx0 * w
+            val x1 = s.nx1 * w
+            val bl = s.blen * w
+            val travel = (x1 - x0) + bl
+            val period = travel / (s.speed * w)
+            var p = (timeSec / period) % 1f
+            if (p < 0f) p += 1f
+            val off = p * travel - bl
+            val bx = if (s.reverse) x1 - off - bl else x0 + off
+
+            // 严格裁剪在电缆范围内
+            clipRect(x0, yc - th, x1, yc + th) {
+                // 外发光
+                drawRoundRect(
+                    color = Color(0x2912D4F0),
+                    topLeft = Offset(bx - th * 0.40f, yc - th * 0.90f),
+                    size = Size(bl + th * 0.80f, th * 1.80f),
+                    cornerRadius = CornerRadius(th * 0.90f)
                 )
-            } else {
-                drawPath(
-                    path,
-                    color = Color(0xFF78F8FF).copy(alpha = 0.28f),
-                    style = Stroke(width = maxOf(2.4f, size.width * 0.010f))
+                // 主体
+                drawRoundRect(
+                    brush = Brush.horizontalGradient(
+                        listOf(Color(0xFF0ACBE8), Color(0xFF46E6FA), Color(0xFF10D2EF)),
+                        startX = bx,
+                        endX = bx + bl
+                    ),
+                    topLeft = Offset(bx, yc - th / 2f),
+                    size = Size(bl, th),
+                    cornerRadius = CornerRadius(th / 2f)
                 )
             }
         }
-        // 中心节点
-        val hub = FlowPaths.hub(size)
-        drawCircle(Cyan.copy(alpha = 0.9f), radius = maxOf(3f, size.width * 0.006f), center = hub)
     }
 }

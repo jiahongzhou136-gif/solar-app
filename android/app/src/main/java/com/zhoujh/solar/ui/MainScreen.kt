@@ -14,13 +14,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -40,6 +43,7 @@ fun fmtPct(v: Double?): String = if (v == null) "--" else "${floor(v).toInt()}%"
 
 /** 全局能流相位（MainScreen 用 withFrameNanos 驱动，120Hz 自适应） */
 var heroPhase by mutableFloatStateOf(0f)
+var heroSeconds by mutableFloatStateOf(0f)
 
 @Composable
 fun MainScreen(
@@ -57,6 +61,7 @@ fun MainScreen(
         while (true) {
             withFrameNanos { now ->
                 heroPhase = ((now - start) / 1_000_000_000f) * 90f
+                heroSeconds = (now - start) / 1_000_000_000f
             }
         }
     }
@@ -170,65 +175,89 @@ private fun WeatherBackdrop(kind: WeatherKind, isNight: Boolean) {
     }
 }
 
+private fun gridText(d: SolarData): String {
+    val g = d.grid ?: return "--"
+    return if (abs(g) < 50) "0 W" else fmtW(g)
+}
+
+private fun batteryText(d: SolarData): String {
+    val charging = (d.charge ?: 0.0) > 0 && (d.discharge ?: 0.0) <= 0
+    val discharging = (d.discharge ?: 0.0) > 0 && (d.charge ?: 0.0) <= 0
+    if (charging) return "+" + fmtW(d.charge)
+    if (discharging) return "-" + fmtW(d.discharge)
+    return "0 W"
+}
+
 @Composable
 private fun LuminaHero(data: SolarData) {
-    var size by remember { mutableStateOf(IntSize.Zero) }
-    val activePv = (data.pv1 ?: 0.0) > 20
-    val activeLoad = (data.load ?: 0.0) > 20
-    val activeBattery = (data.charge ?: 0.0) > 0 || (data.discharge ?: 0.0) > 0
-    val batteryReverse = data.discharging
-    val activeGrid = abs(data.grid ?: 0.0) > 20
-    val gridReverse = (data.grid ?: 0.0) < 0
+    val loadOn = (data.load ?: 0.0) > 20
+    val gridOn = abs(data.grid ?: 0.0) > 20
+    val gridRev = (data.grid ?: 0.0) < -20
+    val battOn = (data.charge ?: 0.0) > 20 || (data.discharge ?: 0.0) > 20
+    val battRev = data.discharging
 
     BoxWithConstraints(
         Modifier
             .fillMaxWidth()
-            .aspectRatio(1617f / 971f)
-            .clip(RoundedCornerShape(28.dp))
-            .clipToBounds()
-            .background(Color(0x3D0C2A43))
-            .border(0.8.dp, Color(0x33FFFFFF), RoundedCornerShape(28.dp))
-            .onSizeChanged { size = it }
+            .aspectRatio(1110f / 905f)
     ) {
         val w = maxWidth
         val h = maxHeight
         Image(
             painterResource(R.drawable.lumina_entities),
             contentDescription = null,
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer { scaleX = 1.08f; scaleY = 1.08f; translationY = -size.height * 0.03f },
-            contentScale = ContentScale.Crop
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.FillBounds
         )
         FlowLayer(
-            size = size,
-            phase = heroPhase,
-            pv = activePv, load = activeLoad,
-            battery = activeBattery, batteryReverse = batteryReverse,
-            grid = activeGrid, gridReverse = gridReverse
+            timeSec = heroSeconds,
+            loadOn = loadOn, gridOn = gridOn, gridRev = gridRev,
+            battOn = battOn, battRev = battRev,
+            modifier = Modifier.fillMaxSize()
         )
-        Buoy("PV1", fmtW(data.pv1), w * 0.115f, h * 0.315f)
-        Buoy("住宅", fmtW(data.load), w * 0.518f, h * 0.215f)
-        Buoy(
-            "电池",
-            "${fmtPct(data.soc)} " + fmtW(if (data.charging) data.charge else if (data.discharging) data.discharge else 0.0),
-            w * 0.268f, h * 0.790f
-        )
-        Buoy("市电", fmtW(data.grid), w * 0.900f, h * 0.330f)
+        BuoyText("电网", gridText(data), w * 0.233f, h * 0.080f)
+        BuoyText("光伏板", fmtW(data.pv1), w * 0.807f, h * 0.061f)
+        LoadBubble(fmtW(data.load), w * 0.688f, h * 0.378f)
+        BuoyText("发电机", "0 W", w * 0.488f, h * 0.934f)
+        BuoyText("电池", batteryText(data), w * 0.873f, h * 0.874f)
     }
 }
 
+/** 普通浮标：无底色纯文字（白字 + 投影），对齐 iOS 9/12 */
 @Composable
-private fun Buoy(title: String, value: String, x: Dp, y: Dp) {
+private fun BuoyText(title: String, value: String, cx: Dp, cy: Dp) {
+    val sh = Shadow(Color(0x8C000000), Offset(0f, 1.5f), 2.5f)
     Column(
         Modifier
-            .offset(x = x - 28.dp, y = y - 16.dp)
-            .background(Color(0x66050F1D), RoundedCornerShape(7.dp))
-            .border(0.6.dp, Color(0x44FFFFFF), RoundedCornerShape(7.dp))
-            .padding(horizontal = 6.dp, vertical = 3.dp)
+            .offset(x = cx - 45.dp, y = cy - 12.dp)
+            .width(90.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(title, color = TextMuted, fontSize = 8.sp)
-        Text(value, color = TextMain, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Text(
+            title, color = Color.White.copy(alpha = 0.92f), fontSize = 9.sp,
+            fontWeight = FontWeight.SemiBold, maxLines = 1,
+            style = TextStyle(shadow = sh)
+        )
+        Text(
+            value, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+            maxLines = 1, style = TextStyle(shadow = sh)
+        )
+    }
+}
+
+/** 离网负载：浅底圆角气泡（深色字），对齐 iOS */
+@Composable
+private fun LoadBubble(value: String, cx: Dp, cy: Dp) {
+    Column(
+        Modifier
+            .offset(x = cx - 42.dp, y = cy - 14.dp)
+            .width(84.dp)
+            .background(Color(0xEBF1F4F7), RoundedCornerShape(7.dp))
+            .padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("离网负载", color = Color(0xFF4A555F), fontSize = 9.sp, maxLines = 1)
+        Text(value, color = Color(0xFF1F2833), fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }
 
