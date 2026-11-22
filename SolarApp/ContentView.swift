@@ -808,7 +808,7 @@ struct LuminaHero: View {
         GeometryReader { geo in
             let w = geo.size.width
             let h = geo.size.height
-            let imgH = w * 1100.0 / 1170.0
+            let imgH = w * 1005.0 / 1170.0
 
             ZStack {
                 Image("LuminaHouse")
@@ -824,14 +824,14 @@ struct LuminaHero: View {
                     .opacity(glowIn)
 
                 // 浮标（雷凌原版字号：标签 9 / 数值 12）
-                buoy("电网", gridText, 0.243, 0.166, w: w, h: h)
-                buoy("光伏板", Fmt.watt(data.pv1), 0.787, 0.149, w: w, h: h)
-                loadBubble(Fmt.watt(data.load), 0.688, 0.457, w: w, h: h)
-                buoy("发电机", "0 W", 0.485, 0.865, w: w, h: h)
-                buoy("电池", batteryText, 0.850, 0.821, w: w, h: h)
+                buoy("电网", gridText, 0.243, 0.083, w: w, h: h)
+                buoy("光伏板", Fmt.watt(data.pv1), 0.787, 0.062, w: w, h: h)
+                loadBubble(Fmt.watt(data.load), 0.688, 0.440, w: w, h: h)
+                buoy("发电机", "0 W", 0.485, 0.940, w: w, h: h)
+                buoy("电池", batteryText, 0.850, 0.887, w: w, h: h)
             }
         }
-        .aspectRatio(1024.0 / 1080.0, contentMode: .fit)
+        .aspectRatio(1170.0 / 1005.0, contentMode: .fit)
         .onAppear {
             withAnimation(.easeOut(duration: 0.8)) { glowIn = 1 }
         }
@@ -897,11 +897,11 @@ struct LuminaHero: View {
         .padding(.vertical, 4)
         .background(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(Color(hex: 0xF3F5F8).opacity(0.96))
+                .fill(Color(hex: 0xF1F4F7).opacity(0.92))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .stroke(Color.white.opacity(0.6), lineWidth: 0.5)
+                .stroke(Color.white.opacity(0.45), lineWidth: 0.5)
         )
         .shadow(color: Color.black.opacity(0.10), radius: 3, x: 0, y: 1)
         .fixedSize()
@@ -934,16 +934,16 @@ private struct FlowBands: View {
     private var segs: [Seg] {
         [
             // A 逆变器 → 住宅（离网负载）
-            Seg(ny: 0.5191, nx0: 0.5453, nx1: 0.7034, blen: 0.0538, speed: 0.0605, on: loadOn, rev: false),
+            Seg(ny: 0.5134, nx0: 0.5453, nx1: 0.7034, blen: 0.0538, speed: 0.0605, on: loadOn, rev: false),
             // B 市电电表 ↔ 逆变器（取电向右，馈电向左）
-            Seg(ny: 0.5827, nx0: 0.1966, nx1: 0.4274, blen: 0.0778, speed: 0.0995, on: gridOn, rev: gridRev),
+            Seg(ny: 0.5831, nx0: 0.1966, nx1: 0.4274, blen: 0.0778, speed: 0.0995, on: gridOn, rev: gridRev),
             // C 逆变器 ↔ 电池（充电向右，放电向左）
-            Seg(ny: 0.7318, nx0: 0.5077, nx1: 0.6667, blen: 0.0624, speed: 0.0788, on: battOn, rev: battRev),
+            Seg(ny: 0.7463, nx0: 0.5077, nx1: 0.6667, blen: 0.0624, speed: 0.0788, on: battOn, rev: battRev),
         ]
     }
 
     var body: some View {
-        let imgH = w * 1100.0 / 1170.0
+        let imgH = w * 1005.0 / 1170.0
         let imgTop = (h - imgH) / 2
         TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { ctx in
             Canvas { base, _ in
