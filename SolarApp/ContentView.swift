@@ -953,7 +953,7 @@ private struct FlowBands: View {
                     let x0 = s.nx0 * w
                     let x1 = s.nx1 * w
                     let blen = s.blen * w
-                    let th = 0.0086 * w
+                    let th = 0.0074 * w
                     let travel = (x1 - x0) + blen
                     let period = Double(travel / max(1, s.speed * w))
                     var p = (t / period).truncatingRemainder(dividingBy: 1)
@@ -966,12 +966,12 @@ private struct FlowBands: View {
                     gc.clip(to: Path(CGRect(x: x0, y: yc - th, width: x1 - x0, height: th * 2)))
 
                     let body = CGRect(x: bx, y: yc - th / 2, width: blen, height: th)
-                    gc.fill(Path(roundedRect: body.insetBy(dx: -th * 0.45, dy: -th * 0.45),
+                    gc.fill(Path(roundedRect: body.insetBy(dx: -th * 0.40, dy: -th * 0.40),
                                  cornerRadius: th),
-                            with: .color(Color(hex: 0x12D4F0).opacity(0.20)))
+                            with: .color(Color(hex: 0x12D4F0).opacity(0.16)))
                     gc.fill(Path(roundedRect: body, cornerRadius: th / 2),
                             with: .linearGradient(
-                                Gradient(colors: [Color(hex: 0x0FC2E4), Color(hex: 0x66E8FA), Color(hex: 0x14C8EA)]),
+                                Gradient(colors: [Color(hex: 0x0ACBE8), Color(hex: 0x46E6FA), Color(hex: 0x10D2EF)]),
                                 startPoint: CGPoint(x: body.minX, y: yc),
                                 endPoint: CGPoint(x: body.maxX, y: yc)))
                 }
